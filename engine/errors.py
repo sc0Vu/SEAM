@@ -24,3 +24,15 @@ class StaleState(SeamError):
 
 class MergeSlotBusy(SeamError):
     """Another task already occupies the single global `merging` slot (invariant 4)."""
+
+
+class GitError(SeamError):
+    """A git command failed unexpectedly."""
+
+
+class TargetCheckedOut(SeamError):
+    """The merge target branch is checked out in a working tree.
+
+    Moving it would leave that tree's files stale, so the engine refuses: run SEAM
+    against a dedicated clone (or detach the target there).
+    """

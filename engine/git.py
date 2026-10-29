@@ -1,0 +1,109 @@
+"""The git operations the engine needs, and nothing more.
+
+Merges are built without touching any working tree: `merge-tree --write-tree` makes
+the merged tree, `commit-tree` the merge commit, and `update-ref` publishes it with a
+compare-and-swap. Hooks are disabled on every call so no repository-supplied code
+runs on the host (invariant 10).
+"""
+
+from __future__ import annotations
+
+import io
+import os
+import subprocess
+import tarfile
+from dataclasses import dataclass
+from pathlib import Path
+
+from engine.errors import GitError
+
+_IDENTITY = {
+    "GIT_AUTHOR_NAME": "SEAM merge engine",
+    "GIT_AUTHOR_EMAIL": "seam@localhost",
+    "GIT_COMMITTER_NAME": "SEAM merge engine",
+    "GIT_COMMITTER_EMAIL": "seam@localhost",
+}
+
+
+@dataclass(frozen=True)
+class MergeTree:
+    """Result of a trial merge. `conflicts` empty means it merged textually clean."""
+
+    tree: str
+    conflicts: tuple[str, ...]
+
+
+class GitRepo:
+    """A git repository on the host. Paths and refs in, shas and booleans out."""
+
+    def __init__(self, path: str | Path) -> None:
+        self.path = Path(path)
+
+    def _run(self, *args: str, input: bytes | None = None, env: dict | None = None):
+        return subprocess.run(
+            ["git", "-C", str(self.path), "-c", "core.hooksPath=/dev/null", *args],
+            input=input, capture_output=True,
+            env={**os.environ, **env} if env else None,
+        )
+
+    def _git(self, *args: str, **kw) -> str:
+        proc = self._run(*args, **kw)
+        if proc.returncode != 0:
+            raise GitError(f"git {' '.join(args)}: {proc.stderr.decode().strip()}")
+        return proc.stdout.decode().strip()
+
+    def rev_parse(self, ref: str) -> str:
+        return self._git("rev-parse", "--verify", f"{ref}^{{commit}}")
+
+    def merge_tree(self, base: str, branch: str) -> MergeTree:
+        """Trial-merge `branch` into `base` with no working tree involved."""
+        proc = self._run("merge-tree", "--write-tree", "--name-only", "--no-messages",
+                         base, branch)
+        if proc.returncode not in (0, 1):
+            raise GitError(f"git merge-tree: {proc.stderr.decode().strip()}")
+        lines = [ln for ln in proc.stdout.decode().splitlines() if ln]
+        return MergeTree(tree=lines[0], conflicts=tuple(dict.fromkeys(lines[1:])))
+
+    def commit_tree(self, tree: str, parents: list[str], message: str) -> str:
+        args = ["commit-tree", tree, "-m", message]
+        for p in parents:
+            args += ["-p", p]
+        return self._git(*args, env=_IDENTITY)
+
+    def export(self, commit: str, dest: Path) -> None:
+        """Write `commit`'s files into `dest` — a plain tree, no `.git`, nothing for a
+        sandboxed process to reach back into the repository through."""
+        proc = self._run("archive", "--format=tar", commit)
+        if proc.returncode != 0:
+            raise GitError(f"git archive: {proc.stderr.decode().strip()}")
+        with tarfile.open(fileobj=io.BytesIO(proc.stdout)) as tar:
+            tar.extractall(dest, filter="data")
+
+    def is_ancestor(self, commit: str, ref: str) -> bool:
+        """True if `commit` is reachable from `ref` (i.e. it has landed there)."""
+        proc = self._run("merge-base", "--is-ancestor", commit, ref)
+        if proc.returncode not in (0, 1):
+            raise GitError(f"git merge-base: {proc.stderr.decode().strip()}")
+        return proc.returncode == 0
+
+    def update_branch(self, branch: str, new: str, expected: str) -> bool:
+        """Atomically move `branch` from `expected` to `new`. False if it had moved."""
+        return self._run("update-ref", f"refs/heads/{branch}", new, expected).returncode == 0
+
+    def checked_out_in(self, branch: str) -> list[str]:
+        """Working trees that have `branch` checked out."""
+        out = self._git("worktree", "list", "--porcelain")
+        trees, current = [], None
+        for line in out.splitlines():
+            if line.startswith("worktree "):
+                current = line.removeprefix("worktree ")
+            elif line == f"branch refs/heads/{branch}":
+                trees.append(current)
+        return trees
+
+    def add_worktree(self, path: Path, branch: str, start: str) -> None:
+        """Create a task's isolated worktree on a new `branch` from `start` (invariant 1)."""
+        self._git("worktree", "add", "-b", branch, str(path), start)
+
+    def remove_worktree(self, path: Path) -> None:
+        self._git("worktree", "remove", "--force", str(path))
