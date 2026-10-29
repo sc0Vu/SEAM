@@ -321,11 +321,13 @@ cost is Claude Code's reported `total_cost_usd`, single runs, not a benchmark):*
 | case | outcome | attempts | reported cost |
 |---|---|---|---|
 | 1 happy path | both tasks `merged`, zero human touch; main suite green (11 passed) | 0 rejections | $0.08 |
+| 1, `--workers 2` | both `merged` by different workers (backend-1, backend-2), zero touch; main suite green (10 passed) | 0 rejections | $0.08 |
 | 2 escalation | rename `merged`; `farewell` → `needs_human` (merge-time suite: `cannot import name 'greet'`); main never broken (2 passed) | rename rejected once (bytecode, see below) | $0.21 |
 
-Both v1 success criteria were met once each. Not yet shown on the real runtime:
-parallel workers (`--workers 2`; parallelism is covered only by the engine tests), and
-any repeat-rate or escalation-rate figure. The first case-1 attempt exposed a bug:
+Both v1 success criteria were met once each. In the `--workers 2` run the two task
+commits landed 4 s apart, about 12 s after start, so the runs overlapped (no start
+times are logged; this is inferred from commit times). Not yet shown: any
+repeat-rate or escalation-rate figure. The first case-1 attempt exposed a bug:
 `git add -A` staged `__pycache__/` written by the worker's own test runs, which the
 gate rejected as out-of-scope edits; fixed by `ARTIFACT_EXCLUDES` (§5). Branches
 committed before that fix cannot drop the bytecode (deletions are excluded too) and
