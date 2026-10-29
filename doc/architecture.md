@@ -369,6 +369,30 @@ bug. Caveman was evaluated and not adopted: its output-voice saving is small for
 code-heavy runs, its log compression targets large outputs the greeter lacks, and
 its cloud features would send model traffic to a third party past the proxy.
 
+**First real-codebase run: boltons-bench-1 (2026-10-30, `examples/boltons`).**
+boltons @ `d31d821` (775 tests incl. doctests, offline in ~8 s); 8 feature tasks, one
+per module, written by the AI that built SEAM (so **not an independent benchmark**),
+`--workers 2`, full suite with doctests at merge.
+
+| result | value |
+|---|---|
+| merged / needs_human | **8 / 0** (escalation rate 0/8) |
+| review rejections, failed runs | 0, 0 |
+| master after the run | 807 passed (775 + 32 new), 16 commits, +360 lines |
+| cost | $0.67: workers $0.353 (8 runs, 89% cache hit), reviewer $0.312 (8 reviews) |
+
+What this does and doesn't show: the mechanism ran end to end on real code with no
+human touch. It does **not** exercise escalation on real code: one task per module
+with disjoint scopes gave the merge suite nothing to catch, so 0/8 says little about
+the escalation rate a real goal would see. Two findings:
+- *The reviewer sees only the diff.* On `LRI.resize` it noted it could not open
+  `cacheutils.py` and judged eviction accounting partly from memory of upstream
+  boltons. It was right here, but on unfamiliar code it would be guessing. Candidate
+  fix: give it the pre-change contents of the changed files (bounded), still with no
+  tools.
+- *Review cost ~= worker cost.* Opus 5.5 reviews wrote ~1.2k output tokens each, much
+  of it in approval notes nobody acts on.
+
 ## 9. Risks
 - **Semantic merge is unsolved in general** — escalation is a feature; the lever is
   decomposition/contract quality, not a cleverer merger.

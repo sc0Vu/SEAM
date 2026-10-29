@@ -1,0 +1,93 @@
+{
+  "goal": "boltons-bench-1",
+  "tasks": [
+    {
+      "key": "shorten",
+      "type": "backend",
+      "description": "Add strutils.shorten(text, width, placeholder='...') that truncates text to at most width characters on a word boundary.",
+      "spec_ref": "shorten(text, width, placeholder='...') -> str. If len(text) <= width return text unchanged. Otherwise return the longest prefix that ends at a word boundary (whitespace) such that prefix.rstrip() + placeholder fits in width; if no whole word fits, return placeholder[:width]. Raise ValueError if width < 0. Add it to the module's __all__ if it has one, with a doctest, and tests.",
+      "file_scope": [
+        "boltons/strutils.py",
+        "tests/test_strutils.py"
+      ],
+      "test_cmd": "python -m pytest -q --doctest-modules boltons/strutils.py tests/test_strutils.py"
+    },
+    {
+      "key": "interleave",
+      "type": "backend",
+      "description": "Add iterutils.interleave(*iterables) and interleave_iter(*iterables): round-robin items from each iterable until all are exhausted.",
+      "spec_ref": "Follow the module's list/_iter convention: interleave_iter is a generator; interleave returns a list. interleave([1,2,3], 'ab') == [1, 'a', 2, 'b', 3]; shorter iterables drop out, longer ones continue; no iterables -> []. Accept any iterable, consume lazily. Doctest + tests.",
+      "file_scope": [
+        "boltons/iterutils.py",
+        "tests/test_iterutils.py"
+      ],
+      "test_cmd": "python -m pytest -q --doctest-modules boltons/iterutils.py tests/test_iterutils.py"
+    },
+    {
+      "key": "lerp",
+      "type": "backend",
+      "description": "Add mathutils.lerp(a, b, t) and inverse_lerp(a, b, x) for linear interpolation.",
+      "spec_ref": "lerp(a, b, t) = a + (b - a) * t, no clamping (t outside [0,1] extrapolates). inverse_lerp(a, b, x) = (x - a) / (b - a); raise ValueError when a == b. Both accept ints and floats. Doctests + tests including extrapolation and the a == b error.",
+      "file_scope": [
+        "boltons/mathutils.py",
+        "tests/test_mathutils.py"
+      ],
+      "test_cmd": "python -m pytest -q --doctest-modules boltons/mathutils.py tests/test_mathutils.py"
+    },
+    {
+      "key": "lru_resize",
+      "type": "backend",
+      "description": "Add a resize(max_size) method to cacheutils.LRI (inherited by LRU) that changes the cache's capacity, evicting entries if it shrinks.",
+      "spec_ref": "resize(max_size): max_size must be a positive int, else ValueError. After resizing, max_size reflects the new value and len(cache) <= max_size. When shrinking, evict in the cache's own eviction order (least-recently-inserted for LRI, least-recently-used for LRU), and count evictions the same way the cache already does (on_miss/eviction counters/callbacks as existing code does). Thread-safety must match existing methods (use the instance lock). Tests for both LRI and LRU.",
+      "file_scope": [
+        "boltons/cacheutils.py",
+        "tests/test_cacheutils.py"
+      ],
+      "test_cmd": "python -m pytest -q --doctest-modules boltons/cacheutils.py tests/test_cacheutils.py"
+    },
+    {
+      "key": "with_query_param",
+      "type": "backend",
+      "description": "Add URL.with_query_param(key, value) to urlutils returning a NEW URL with that query parameter set to a single value, leaving the original URL unchanged.",
+      "spec_ref": "u2 = u.with_query_param('a', '1'): u2 is a new URL object; all existing values for key 'a' are replaced by the single value, other params keep their order; if 'a' was absent it is appended. value=None removes the key entirely. u itself is not mutated. u2.to_text() is what callers use. Tests including repeated keys and removal.",
+      "file_scope": [
+        "boltons/urlutils.py",
+        "tests/test_urlutils.py"
+      ],
+      "test_cmd": "python -m pytest -q --doctest-modules boltons/urlutils.py tests/test_urlutils.py"
+    },
+    {
+      "key": "omd_move_to_end",
+      "type": "backend",
+      "description": "Add OrderedMultiDict.move_to_end(key, last=True) to dictutils, like OrderedDict.move_to_end, moving every value of key.",
+      "spec_ref": "move_to_end(key, last=True): all (key, value) pairs for key keep their relative order and move to the end (last=True) or the beginning (last=False) of the iteration order of items(multi=True). Missing key raises KeyError. getlist(key) is unchanged by the move. Subclasses (e.g. urlutils.QueryParamDict) must keep working. Tests including multi=True ordering and last=False.",
+      "file_scope": [
+        "boltons/dictutils.py",
+        "tests/test_dictutils.py"
+      ],
+      "test_cmd": "python -m pytest -q --doctest-modules boltons/dictutils.py tests/test_dictutils.py"
+    },
+    {
+      "key": "blist_rotate",
+      "type": "backend",
+      "description": "Add BarrelList.rotate(n=1) to listutils that rotates the list in place like collections.deque.rotate.",
+      "spec_ref": "rotate(n=1): rotate n steps to the right (negative n rotates left); n larger than len wraps around; rotating an empty list is a no-op. The list must remain a valid BarrelList afterwards (indexing, len, iteration, and further inserts all correct), including when it spans multiple internal lists. Tests including a list large enough to span several internal lists.",
+      "file_scope": [
+        "boltons/listutils.py",
+        "tests/test_listutils.py"
+      ],
+      "test_cmd": "python -m pytest -q --doctest-modules boltons/listutils.py tests/test_listutils.py"
+    },
+    {
+      "key": "percentile",
+      "type": "backend",
+      "description": "Add Stats.get_percentile(p) to statsutils taking p in [0, 100].",
+      "spec_ref": "get_percentile(p) returns the same value as get_quantile(p / 100.0). Raise ValueError if p is not within [0, 100]. Works for int and float p. Doctest + tests, including the bounds 0 and 100 and an out-of-range value.",
+      "file_scope": [
+        "boltons/statsutils.py",
+        "tests/test_statsutils.py"
+      ],
+      "test_cmd": "python -m pytest -q --doctest-modules boltons/statsutils.py tests/test_statsutils.py"
+    }
+  ]
+}
