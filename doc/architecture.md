@@ -40,7 +40,13 @@ worker runtime as pluggable.**
   are untrusted code. Behind one interface `Sandbox.run(cmd, workdir, timeout) ->
   RunResult` (`sandbox/base.py`); v1 = `DockerSandbox`, a fresh `docker run --rm` per
   command with only the work dir mounted, `--network none`, `--cap-drop ALL`,
-  `no-new-privileges`, and memory/pid caps.
+  `no-new-privileges`, and memory/pid caps. Image: `sandbox/Dockerfile`
+  (`seam-sandbox`: python + pytest + Claude Code). Test runs get `--network none`.
+  Worker runs need the model API, so they get a network and their API key passed by
+  env-var *name*; the worktree's `.git` pointer is overlaid read-only so a worker
+  cannot repoint the host's git at a hostile config. A worker container *can* reach
+  the network — accepted for v1 because the worker must call the API; it still never
+  touches the host filesystem beyond its worktree.
 - **Product = coordinator + merge/review engine** — the novel IP.
 
 Rejected as *the architecture*: Claude Code agent teams and AgentScope — fine as

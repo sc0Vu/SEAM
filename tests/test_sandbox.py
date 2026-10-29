@@ -37,20 +37,37 @@ def test_command_isolates_container(tmp_path):
     assert argv[-3:] == ["sh", "-c", "pytest"]
 
 
+def test_worker_options_pass_env_by_name_and_overlay_readonly(tmp_path):
+    (tmp_path / ".git").write_text("gitdir: /somewhere\n")
+    sb = DockerSandbox(network="bridge", env_names=("ANTHROPIC_API_KEY",),
+                       readonly=(".git", "absent"), user="1000:1000")
+    argv = sb.command("claude -p hi", tmp_path, "seam-x")
+    joined = " ".join(argv)
+    assert "--network bridge" in joined
+    assert argv[argv.index("-e") + 1] == "ANTHROPIC_API_KEY"  # a name, never a value
+    assert "=" not in argv[argv.index("-e") + 1]
+    assert f"{tmp_path.resolve()}/.git:/work/.git:ro" in argv
+    assert not any("absent" in a for a in argv)  # missing paths are skipped
+    assert "--user 1000:1000" in joined
+
+
+IMAGE = "python:3.13-slim"  # any small image works for these behavior checks
+
+
 @needs_docker
 def test_exit_code_and_output_come_back(tmp_path):
     (tmp_path / "f.txt").write_text("hello")
-    res = DockerSandbox().run("cat f.txt; exit 3", tmp_path, timeout=120)
+    res = DockerSandbox(IMAGE).run("cat f.txt; exit 3", tmp_path, timeout=120)
     assert (res.exit_code, res.output.strip()) == (3, "hello")
 
 
 @needs_docker
 def test_no_network(tmp_path):
     cmd = "python -c \"import socket; socket.create_connection(('1.1.1.1', 53), 3)\""
-    assert not DockerSandbox().run(cmd, tmp_path, timeout=120).ok
+    assert not DockerSandbox(IMAGE).run(cmd, tmp_path, timeout=120).ok
 
 
 @needs_docker
 def test_timeout_kills_container(tmp_path):
-    res = DockerSandbox().run("sleep 60", tmp_path, timeout=3)
+    res = DockerSandbox(IMAGE).run("sleep 60", tmp_path, timeout=3)
     assert res.timed_out and not res.ok
