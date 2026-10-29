@@ -356,3 +356,67 @@ same file_scopes and could never be claimed).
   on a real codebase.
 - **Predicted file_scope can be wrong** — the scope-expansion protocol (§5) is what
   keeps invariant 2 true when a prediction misses; watch how often it fires.
+
+---
+
+## 10. Proposed (not built): credential proxy for worker containers
+
+**Constraint served: safety (invariants 10 and 13).** Today a worker container holds
+the real API credential in its environment *and* has open network egress (§1). The
+worker runs an agent over untrusted repo content, so a prompt-injected worker can read
+the credential and send it, or the repo, anywhere. For OAuth that credential is a
+long-lived subscription token. This is the main gap before SEAM runs on a real repo.
+
+**Design.**
+```
+worker container ──(internal net, no egress)──▶ seam-proxy ──(bridge)──▶ api.anthropic.com
+  dummy credential                               real credential (-e NAME)
+  ANTHROPIC_BASE_URL=http://seam-proxy:8080      swaps the auth header; allowlist
+```
+- `docker network create --internal seam-workers`: containers on it reach each other
+  but nothing outside. Worker runs move from `bridge` to this network.
+- `seam-proxy`: one long-lived container per `run`, on `seam-workers` *and* `bridge`,
+  started by the CLI before any worker and removed after (`docker rm -f`, also on
+  Ctrl-C). It is SEAM's own code (stdlib Python, in the `seam-sandbox` image), not
+  agent-written, and it is the only process that holds the credential.
+- Forwarding rule: only `POST /v1/messages` (any query string) is forwarded to
+  `https://api.anthropic.com`; everything else gets 403. The proxy replaces
+  `Authorization: Bearer …` (OAuth) or `x-api-key` (API key) with the real value,
+  passes all other headers through, and streams the response unbuffered (SSE).
+- Workers get a dummy credential *of the same kind* as the real one, so Claude Code
+  uses the matching auth mode and headers, plus
+  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`.
+
+**Evidence so far (2026-10-30, Claude Code 2.1.312).** A probe with
+`ANTHROPIC_BASE_URL` pointing at a logging stub on an `--internal` network and a dummy
+`CLAUDE_CODE_OAUTH_TOKEN` showed that Claude Code sends only `POST /v1/messages?beta=true`
+with `Authorization: Bearer <dummy>` and the `oauth-2025-04-20` beta header, and
+attempts nothing else. The stub returned 401, so no request reached Anthropic.
+**Unverified:** that a forwarded request succeeds end to end, and that a run with
+tools makes no other calls (e.g. web fetch, which would now be blocked).
+
+**What it fixes.** The credential never enters a worker container. Workers lose all
+egress except the model API, so they can't exfiltrate the repo to third parties or
+download dependencies at run time (the image must carry them).
+
+**What it does not fix.** A compromised worker can still make arbitrary model calls
+through the proxy, spending quota until its run is killed (bounded by the run timeout
+and `--max-budget-usd`, which the worker itself enforces, so not trusted). A later
+step can have the proxy meter tokens per run and cut off at a cap. Data sent to the
+model API still leaves the machine, as it does today. The reviewer runs on the host
+with the host login and is unaffected.
+
+**Rejected alternatives.**
+- *Proxy on the host*: an `--internal` network can't reach the host, and any network
+  that can also has open egress.
+- *Scoped short-lived tokens*: `claude setup-token` issues one long-lived token;
+  there is no per-run scoped credential to mint.
+- *Egress firewall only*, keeping the real token in the container: stops sending it
+  elsewhere, but the token still sits in an environment the agent can read.
+
+**Changes if approved.** `sandbox/proxy.py` and its tests (header swap, allowlist,
+streaming); proxy and network lifecycle in `cli.py`, with a preflight probe through
+the proxy; the worker `DockerSandbox` gets `network="seam-workers"` and fixed dummy env
+values (the one place real values never appear); §1 updated. Proposed constitution
+change, to invariant 13: "Agent containers never hold a real credential; model API
+calls go through the SEAM credential proxy."
