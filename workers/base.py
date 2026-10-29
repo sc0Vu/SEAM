@@ -38,6 +38,7 @@ class Worker(Protocol):
     """A worker runtime. Implementations must edit only inside `worktree` and only
     within `task.spec.file_scope`, and must not touch task state themselves."""
 
+    id: str
     type: str
 
     def run(self, task: Task, worktree: Path) -> WorkerResult: ...

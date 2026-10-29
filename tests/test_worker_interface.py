@@ -7,6 +7,7 @@ from workers import Worker, WorkerResult
 
 
 class EchoWorker:
+    id = "echo"
     type = "backend"
 
     def run(self, task: Task, worktree: Path) -> WorkerResult:

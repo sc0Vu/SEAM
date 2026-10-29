@@ -83,6 +83,26 @@ The **architect** (owns the interface contract) is a hat the lead wears in v1; s
 out later. Contract changes go through the lead, serialized — a worker never changes
 a shared interface unilaterally (the main source of semantic conflicts).
 
+**Orchestrator** (`engine/orchestrator.py`) — the loop that runs a team. One process,
+and the *only* writer of task state: worker and review runs execute concurrently in
+a thread pool and hand back results; the loop thread applies every transition (the
+condition that keeps sqlite valid). Each pass: drain the merge queue (serially),
+retry denied scope requests that merges may have freed, dispatch idle workers (rework
+on their own in_progress tasks first, then a fresh claim → new worktree + branch
+`seam/task-<id>` off the target), start one review if the reviewer is free; then wait
+for any run to finish. A worker's changes are committed on its branch by the
+orchestrator, and the diff stored at submit is git's (`target...branch`), not the
+worker's. It stops when nothing is running and nothing can start (done, escalated,
+blocked, or budget spent). The lead's budget is checked before every new agent run;
+runs already in flight may overshoot it by at most one run each.
+Denied scope requests are remembered in memory only; after a restart a blocked task
+waits for the lead or a human.
+
+**Review gate** (`reviewer/gate.py`) — deterministic checks before any model is paid:
+reviewer ≠ author, non-empty diff, every changed path inside file_scope, the task's
+own `test_cmd` green on the branch in the sandbox; only then the `Reviewer` runtime
+judges the git diff against the spec.
+
 ---
 
 ## 3. Task state machine
