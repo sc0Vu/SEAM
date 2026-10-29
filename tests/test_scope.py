@@ -1,6 +1,6 @@
 import pytest
 
-from engine.scope import globs_overlap, scopes_overlap
+from engine.scope import globs_overlap, path_in_scope, scopes_overlap
 
 
 @pytest.mark.parametrize(
@@ -39,3 +39,28 @@ def test_scope_lists():
     assert scopes_overlap(["a/**", "b/x.py"], ["c/**", "b/*.py"])
     assert not scopes_overlap(["a/**"], ["b/**", "c/**"])
     assert not scopes_overlap([], ["a/**"])
+
+
+@pytest.mark.parametrize(
+    "path, scope, inside",
+    [
+        ("auth/login.py", ["auth/**"], True),
+        ("auth/deep/x/y.py", ["auth/**"], True),
+        ("auth.py", ["auth/**"], False),
+        ("api/users.py", ["api/users.*"], True),
+        ("api/v2/users.py", ["api/*.py"], False),
+        ("a/b/c/test_x.py", ["a/**/test_*.py"], True),
+        ("a/test_x.py", ["a/**/test_*.py"], True),  # ** may span zero segments
+        ("lib.py", ["lib.py", "app.py"], True),
+        ("other.py", ["lib.py", "app.py"], False),
+        ("x.py", [], False),
+    ],
+)
+def test_path_in_scope(path, scope, inside):
+    assert path_in_scope(path, scope) is inside
+
+
+def test_path_in_scope_never_contradicts_overlap():
+    # A path inside a scope must make that scope overlap the path's own literal scope.
+    for path, scope in [("auth/x.py", ["auth/**"]), ("api/u.py", ["api/*.py"])]:
+        assert path_in_scope(path, scope) and scopes_overlap(scope, [path])

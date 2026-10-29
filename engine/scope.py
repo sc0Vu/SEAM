@@ -46,6 +46,25 @@ def globs_overlap(a: str, b: str) -> bool:
     return rest == ["**"]
 
 
+def _match(path: list[str], glob: list[str]) -> bool:
+    if not glob:
+        return not path
+    if glob[0] == "**":
+        return any(_match(path[i:], glob[1:]) for i in range(len(path) + 1))
+    return bool(path) and fnmatchcase(path[0], glob[0]) and _match(path[1:], glob[1:])
+
+
+def path_in_scope(path: str, scope: Iterable[str]) -> bool:
+    """True if the concrete repo-relative `path` matches some glob in `scope`.
+
+    Same glob semantics as `globs_overlap` (`*` stays within a segment, `**` spans any
+    number of them, including none). The review gate uses it to reject a diff that
+    edits outside its task's file_scope (invariant 3).
+    """
+    segs = _segments(path)
+    return any(_match(segs, _segments(g)) for g in scope)
+
+
 def scopes_overlap(a: Iterable[str], b: Iterable[str]) -> bool:
     """Return True if any glob in scope `a` overlaps any glob in scope `b`."""
     b = list(b)

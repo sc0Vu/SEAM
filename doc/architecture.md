@@ -95,6 +95,7 @@ blocked ─unblock(lead re-grants once disjoint)─▶ in_progress
 submitted ─pickup(reviewer)─▶ in_review
 in_review ─approve─▶ approved ─auto─▶ queued_for_merge
 in_review ─changes_requested─▶ in_progress            (same branch, new run; bounded)
+in_progress ─fail(worker run crashed/empty)─▶ in_progress  (re-run; bounded)
 queued_for_merge ─take(merge engine, SINGLE SLOT)─▶ merging
 merging ─clean─▶ merged                               (→ wake lead)
 merging ─textual or semantic conflict─▶ needs_human
@@ -115,7 +116,7 @@ because a human's judgment has replaced the loop that exhausted it; `resolve` is
 branch that needs no further edits (e.g. the human fixed main), `rework` for one that
 does (e.g. escalated after failing review).
 
-**Retry bound.** `attempts` bounds the review loop only. Merge failures never loop:
+**Retry bound.** `attempts` bounds the review loop and failed worker runs (`fail`). Merge failures never loop:
 the first textual or semantic conflict goes to `needs_human` (`merge_conflict` still
 increments `attempts`, as a record of how often the task bounced).
 

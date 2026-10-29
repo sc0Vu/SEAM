@@ -36,6 +36,7 @@ class Event(StrEnum):
     GRANT_SCOPE = "grant_scope"
     DENY_SCOPE = "deny_scope"
     SUBMIT = "submit"
+    FAIL = "fail"
     PICKUP = "pickup"
     APPROVE = "approve"
     REQUEST_CHANGES = "request_changes"
@@ -66,6 +67,7 @@ _TRANSITIONS: dict[tuple[State, Event], State] = {
     (State.SCOPE_REQUESTED, Event.DENY_SCOPE): State.BLOCKED,
     (State.BLOCKED, Event.UNBLOCK): State.IN_PROGRESS,
     (State.IN_PROGRESS, Event.SUBMIT): State.SUBMITTED,
+    (State.IN_PROGRESS, Event.FAIL): State.IN_PROGRESS,
     (State.SUBMITTED, Event.PICKUP): State.IN_REVIEW,
     (State.IN_REVIEW, Event.APPROVE): State.APPROVED,
     (State.IN_REVIEW, Event.REQUEST_CHANGES): State.IN_PROGRESS,
@@ -89,6 +91,8 @@ def next_state(
       so `merged` is reachable only via in_review -> ... -> merging (invariant 5).
     - `request_changes` counts an attempt; reaching `max_attempts` routes to
       `needs_human` instead of back to `in_progress` (invariant 11, bounded retries).
+    - `fail` (a worker run crashed or produced nothing) counts an attempt the same
+      way, so a worker that keeps failing escalates instead of being re-run forever.
     - `merge_conflict` also counts an attempt, for the record (it always escalates).
     - `rework` (a human sends an escalated task back to its branch) resets attempts:
       the human's judgment starts a fresh retry budget.
@@ -106,7 +110,7 @@ def next_state(
 
     if event is Event.REWORK:
         return target, 0
-    if event in (Event.REQUEST_CHANGES, Event.MERGE_CONFLICT):
+    if event in (Event.REQUEST_CHANGES, Event.FAIL, Event.MERGE_CONFLICT):
         attempts += 1
         if attempts >= max_attempts:
             return State.NEEDS_HUMAN, attempts

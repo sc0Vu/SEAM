@@ -89,3 +89,9 @@ def test_rework_from_needs_human_resets_retry_budget():
 def test_rework_only_from_needs_human():
     with pytest.raises(IllegalTransition):
         next_state(State.IN_REVIEW, Event.REWORK, 0)
+
+
+def test_failed_worker_runs_are_bounded():
+    state, attempts = walk([Event.CLAIM, Event.START, Event.FAIL, Event.FAIL])
+    assert (state, attempts) == (State.IN_PROGRESS, 2)
+    assert next_state(state, Event.FAIL, attempts) == (State.NEEDS_HUMAN, 3)
