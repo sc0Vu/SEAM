@@ -193,3 +193,10 @@ The engine, coordinator and state machine import no model runtime, so they are
 unit-tested without model calls; the Docker tests run when a daemon is available.
 Rules for changes (tests and docs in the same change, keep `doc/architecture.md` in
 sync, one logical change per commit) are in [CLAUDE.md](CLAUDE.md).
+
+## License
+
+SEAM is licensed under the **GNU Affero General Public License v3.0 only**
+(`AGPL-3.0-only`); see [LICENSE](LICENSE). If you distribute SEAM or a modified
+version, or let others use a modified version over a network, you must make its
+source available under the same license.

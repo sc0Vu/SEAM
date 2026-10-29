@@ -7,6 +7,8 @@ name = "seam"
 version = "0.0.1"
 description = "Software Engineering Agent Merge: many agents, one codebase, one seam."
 requires-python = ">=3.11"
+license = {text = "AGPL-3.0-only"}
+classifiers = ["License :: OSI Approved :: GNU Affero General Public License v3"]
 dependencies = []
 
 [tool.setuptools]
