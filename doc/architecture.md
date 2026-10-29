@@ -558,7 +558,7 @@ endpoints get 403, no route to the internet).
 
 ---
 
-## 11. Adversarial probe tests in review (built, opt-in: `run --review-probes`)
+## 11. Adversarial probe tests in review (built; opt-in, `run --review-probes`: measured 4/4 catch, 3/4 false rejection)
 
 **Constraint served: review reliability (invariants 5, 6).** §8 measured that a single
 LLM review let a significant, test-passing bug through half the time: judgment alone
@@ -586,7 +586,28 @@ dropped unrun (parsed with `ast`, never executed on the host). Probes are stored
 bench-2's buggy `without_query_params` and passed the fixed one, in the real sandbox.
 Whether the *reviewer* writes such probes is step 3 below.
 
-**Risks and how they are measured.** A probe can encode a wrong expectation and reject
-correct work. Measure on bench-2: the two confirmed-buggy first versions (catch rate,
-vs 1/3 for single reviews) and their fixed versions (false-rejection rate), two
-reviews each.
+**Measured (2026-10-30, bench-2, whole-file context, Opus 5.5, 2 reviews per version,
+$1.48 total, $0.15–0.27 per review):**
+
+| version | rejected | right? |
+|---|---|---|
+| buggy `setlist` (`nan` key) | 2/2, by probe | caught |
+| buggy `without_query_params` (stale `qp`) | 2/2, by probe | caught |
+| fixed `setlist` | 2/2, by probe | **false rejection** |
+| fixed `without_query_params` | 1/2, by probe | **false rejection** |
+
+Catch rate 4/4 (single reviews without probes: 1/3), but false rejections 3/4. All
+three false rejections had the same cause, confirmed by running the probe scenario
+on the *original* code in the sandbox: the probe asserted behavior the original
+boltons does not have — `FastIterOrderedMultiDict.items()` already disagrees with
+`omd[k]` for repeated keys, and edits made through `url.qp` are already lost from
+`to_text()`. (Both look like genuine upstream quirks; neither is the task's fault.)
+
+**Decision: stays opt-in.** Under always-reject, a 3/4 false-rejection rate would burn
+every correct task's attempts and escalate it. The open problem is telling "the
+change broke this" from "this was never true"; running probes against the original
+code does not settle it, since a probe of new API fails there before reaching its
+faulty assertion. Candidates: return a failing probe and the original code to the
+reviewer for one adjudication call before rejecting (changes the always-reject
+policy, so the owner's call), or require each probe to name the spec clause or
+original-code behavior it asserts.
