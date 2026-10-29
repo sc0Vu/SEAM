@@ -1,0 +1,47 @@
+# Lint + tests on every push and pull request. No model calls and no credentials:
+# the engine is tested with scripted workers/reviewers (CLAUDE.md, Conventions).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -e '.[dev]'
+      - run: ruff check .
+      # Docker is available on the runner, so the container behavior tests run too
+      # (they use python:3.13-slim); the proxy isolation test needs the SEAM image
+      # and is covered by the sandbox job.
+      - run: pytest -q
+
+  sandbox:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -e '.[dev]'
+      - name: Build the sandbox image
+        run: docker build -t seam-sandbox sandbox/
+      - name: Sandbox and credential-proxy isolation tests (real containers)
+        run: pytest -q -rs tests/test_sandbox.py tests/test_proxy.py

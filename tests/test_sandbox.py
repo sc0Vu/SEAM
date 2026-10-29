@@ -67,6 +67,9 @@ def workdir():
     """A work dir under $HOME: Colima (and Docker Desktop by default) share only $HOME
     with containers, so a pytest tmp_path under /var/folders mounts as empty."""
     with tempfile.TemporaryDirectory(prefix=".seam-test-", dir=Path.home()) as d:
+        # TemporaryDirectory is 0700; the image's user (uid 1000) must still enter it on
+        # hosts where the test user is another uid (e.g. CI runners, uid 1001).
+        Path(d).chmod(0o755)
         yield Path(d)
 
 
