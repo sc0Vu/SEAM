@@ -5,9 +5,6 @@ no fixture code runs on the host. Its "suite" is: every `from lib import NAME` i
 file must name something `lib.py` defines — enough to express a semantic conflict.
 """
 
-import re
-from pathlib import Path
-
 import pytest
 
 from engine.errors import TargetCheckedOut
@@ -15,31 +12,11 @@ from engine.git import GitRepo
 from engine.merge import MergeEngine
 from engine.states import Event, State
 from engine.task import TaskSpec
-from sandbox.base import RunResult
 from store import TaskStore
+from tests.fakes import ImportCheckSandbox
 from tests.gitfixture import branch_with, commit_files, git, make_repo
 
 LIB = "def greet():\n    return 'hi'\n"
-
-
-class ImportCheckSandbox:
-    """Fake sandbox: passes iff every `from lib import X` resolves in lib.py."""
-
-    def __init__(self, during=None):
-        self.calls = []
-        self.during = during  # hook to simulate something happening mid-suite
-
-    def run(self, cmd: str, workdir: Path, timeout: float) -> RunResult:
-        self.calls.append((cmd, workdir, sorted(p.name for p in workdir.iterdir())))
-        if self.during:
-            self.during()
-        lib = (workdir / "lib.py").read_text()
-        defined = set(re.findall(r"^def (\w+)", lib, re.M))
-        for f in workdir.glob("*.py"):
-            for name in re.findall(r"from lib import (\w+)", f.read_text()):
-                if name not in defined:
-                    return RunResult(1, f"ImportError: cannot import name {name!r} ({f.name})")
-        return RunResult(0, "all passed")
 
 
 @pytest.fixture

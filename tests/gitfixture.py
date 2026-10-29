@@ -23,7 +23,7 @@ def commit_files(repo: Path, files: dict[str, str], msg: str = "c") -> str:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text)
     git(repo, "add", "-A")
-    git(repo, "commit", "-q", "-m", msg)
+    git(repo, "commit", "-q", "--allow-empty", "-m", msg)
     return git(repo, "rev-parse", "HEAD")
 
 
