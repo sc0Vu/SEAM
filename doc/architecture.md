@@ -107,7 +107,11 @@ waits for the lead or a human.
 **Review gate** (`reviewer/gate.py`) — deterministic checks before any model is paid:
 reviewer ≠ author, non-empty diff, every changed path inside file_scope, the task's
 own `test_cmd` green on the branch in the sandbox; only then the `Reviewer` runtime
-judges the git diff against the spec.
+judges the git diff against the spec. v1 reviewer runtime (`reviewer/claude_code.py`): `claude -p` with
+**all tools disabled** and a JSON verdict schema, the diff on stdin, from an empty temp
+dir (no project config). With no tools it can only read, so it runs outside the
+sandbox; the diff is labelled untrusted in the prompt, and a manipulated approve
+still has to pass the merge-time full suite.
 
 ---
 
