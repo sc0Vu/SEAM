@@ -193,6 +193,8 @@ def cmd_inspect(args: argparse.Namespace) -> None:
     for r in store.runs(t.id) or []:
         print(f"{r.role:<8} {r.agent_id:<12} {r.outcome:<13} ${r.cost_usd:.3f}  "
               f"{format_usage(r.usage)}")
+        if r.outcome == "reject" and r.notes:
+            print("         " + r.notes.strip().replace("\n", "\n         "))
     print(f"\n--- review notes ---\n{t.review_notes or '(none)'}")
     print(f"\n--- diff ---\n{t.diff or '(none)'}")
 

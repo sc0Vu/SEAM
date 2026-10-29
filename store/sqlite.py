@@ -57,7 +57,8 @@ CREATE TABLE IF NOT EXISTS runs (
     cache_read_tokens  INTEGER NOT NULL DEFAULT 0,
     cache_write_tokens INTEGER NOT NULL DEFAULT 0,
     output_tokens      INTEGER NOT NULL DEFAULT 0,
-    at                 TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+    at                 TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    notes              TEXT    NOT NULL DEFAULT ''
 );
 """
 
@@ -78,6 +79,7 @@ class TaskStore:
         self._db = sqlite3.connect(str(path), isolation_level=None)
         self._db.row_factory = sqlite3.Row
         self._db.executescript(_SCHEMA)
+        self._migrate()
         self.max_attempts = max_attempts
 
     def close(self) -> None:
@@ -253,16 +255,23 @@ class TaskStore:
             settled.append(self.transition(t.id, Event.MERGE_CLEAN if done else Event.RECOVER))
         return settled
 
+    def _migrate(self) -> None:
+        """Bring state dirs made by older SEAM versions up to the current schema."""
+        cols = {r["name"] for r in self._db.execute("PRAGMA table_info(runs)")}
+        if "notes" not in cols:
+            self._db.execute("ALTER TABLE runs ADD COLUMN notes TEXT NOT NULL DEFAULT ''")
+
     def record_run(self, run: RunRecord) -> None:
         """Append one agent run's cost and tokens (accounting only; no state change)."""
         u = run.usage
         with self._tx() as db:
             db.execute(
                 "INSERT INTO runs (task_id, role, agent_id, outcome, cost_usd, input_tokens,"
-                " cache_read_tokens, cache_write_tokens, output_tokens)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " cache_read_tokens, cache_write_tokens, output_tokens, notes)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (run.task_id, run.role, run.agent_id, run.outcome, run.cost_usd,
-                 u.input_tokens, u.cache_read_tokens, u.cache_write_tokens, u.output_tokens),
+                 u.input_tokens, u.cache_read_tokens, u.cache_write_tokens, u.output_tokens,
+                 run.notes),
             )
 
     def runs(self, task_id: int | None = None) -> list[RunRecord]:
@@ -273,7 +282,7 @@ class TaskStore:
         return [
             RunRecord(r["task_id"], r["role"], r["agent_id"], r["outcome"], r["cost_usd"],
                       Usage(r["input_tokens"], r["cache_read_tokens"],
-                            r["cache_write_tokens"], r["output_tokens"]))
+                            r["cache_write_tokens"], r["output_tokens"]), r["notes"])
             for r in self._db.execute(q + " ORDER BY id", args)
         ]
 

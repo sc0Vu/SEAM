@@ -185,9 +185,11 @@ base_sha, merge_sha  (main before the merge; the merge commit — recorded befor
 
 **Run accounting** (`runs` table, `engine/usage.py`): one row per agent run against a
 task: `role` (worker | reviewer | gate — a review the deterministic checks decided,
-no model), `agent_id`, `outcome`, `cost_usd`, and tokens split into uncached input,
+no model), `agent_id`, `outcome`, `cost_usd`, tokens split into uncached input,
 cache reads, cache writes, and output, as the runtime reports them (Claude Code's
-`modelUsage`, summed over every model a run used). It is accounting only: no state
+`modelUsage`, summed over every model a run used), and a review's `notes`, so a
+rejection's reasons survive after a later approval overwrites the task's
+`review_notes`. Older state dirs gain the column on open. It is accounting only: no state
 transition reads it. `run` prints totals by role, `status` too, `inspect` per run.
 
 ---

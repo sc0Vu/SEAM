@@ -157,8 +157,9 @@ class Orchestrator:
             self._finish_review(job.task_id, fut)
 
     def _record(self, task_id: int, role: str, agent: str, outcome: str,
-                cost: float, usage: Usage | None) -> None:
-        self.store.record_run(RunRecord(task_id, role, agent, outcome, cost, usage or Usage()))
+                cost: float, usage: Usage | None, notes: str = "") -> None:
+        self.store.record_run(
+            RunRecord(task_id, role, agent, outcome, cost, usage or Usage(), notes))
 
     def _finish_work(self, task_id: int, fut: Future, worker_id: str) -> None:
         try:
@@ -206,7 +207,8 @@ class Orchestrator:
         by_model = verdict.usage is not None or verdict.cost_usd > 0
         self._record(task_id, "reviewer" if by_model else "gate",
                      self._reviewer_id() if by_model else "gate",
-                     "approve" if verdict.approve else "reject", verdict.cost_usd, verdict.usage)
+                     "approve" if verdict.approve else "reject", verdict.cost_usd, verdict.usage,
+                     verdict.notes)
         if verdict.approve:
             self.store.transition(task_id, Event.APPROVE, review_notes=verdict.notes)
             self.store.transition(task_id, Event.ENQUEUE)

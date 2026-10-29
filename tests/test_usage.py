@@ -29,3 +29,17 @@ def test_store_round_trips_runs_per_task():
     store.record_run(RunRecord(b.id, "gate", "gate", "reject"))
     assert store.runs(a.id) == [RunRecord(a.id, "worker", "w1", "diff", 0.25, Usage(1, 2, 3, 4))]
     assert [r.role for r in store.runs()] == ["worker", "gate"]
+
+
+def test_store_migrates_an_old_runs_table_and_keeps_notes(tmp_path):
+    import sqlite3
+    db = tmp_path / "old.sqlite"
+    TaskStore(db)  # current schema, then strip the column to mimic an old state dir
+    con = sqlite3.connect(db)
+    con.execute("ALTER TABLE runs DROP COLUMN notes")
+    con.commit()
+    con.close()
+    store = TaskStore(db)
+    t = store.create(spec(["a/**"]))
+    store.record_run(RunRecord(t.id, "reviewer", "r", "reject", notes="add tests"))
+    assert store.runs(t.id)[0].notes == "add tests"

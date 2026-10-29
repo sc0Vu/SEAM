@@ -43,6 +43,7 @@ class RunRecord:
     outcome: str
     cost_usd: float = 0.0
     usage: Usage = Usage()
+    notes: str = ""  # a review's notes (kept even after a later run overwrites the task's)
 
 
 def totals_by_role(runs: list[RunRecord]) -> dict[str, tuple[int, float, Usage]]:

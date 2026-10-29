@@ -149,6 +149,7 @@ def test_changes_requested_reruns_same_worker_with_notes(tmp_path):
     # (the scripted approval costs nothing and reports no usage, so it reads as gate).
     assert [(r.role, r.outcome) for r in store.runs(t.id)] == [
         ("worker", "diff"), ("reviewer", "reject"), ("worker", "diff"), ("gate", "approve")]
+    assert store.runs(t.id)[1].notes == "missing V"  # survives the later approval
 
 
 def test_dependent_task_waits_for_dependency_to_merge(tmp_path):
