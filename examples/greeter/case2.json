@@ -1,0 +1,21 @@
+{
+  "goal": "v1 case 2: shared-interface conflict (expect: one merges, the other ESCALATES)",
+  "tasks": [
+    {
+      "key": "rename",
+      "type": "backend",
+      "description": "Rename lib.greet to lib.welcome (same behavior) and update every caller and test in your scope to use welcome. Remove greet entirely.",
+      "spec_ref": "Contract change: lib.welcome(name) -> str replaces lib.greet.",
+      "file_scope": ["lib.py", "app.py", "test_lib.py", "test_app.py"],
+      "test_cmd": "python -m pytest -q test_lib.py test_app.py"
+    },
+    {
+      "key": "farewell",
+      "type": "backend",
+      "description": "Create farewell.py with farewell(name: str) -> str returning greet(name) + ' Goodbye.' (import greet from lib). Add test_farewell.py with pytest tests.",
+      "spec_ref": "lib.greet(name) -> str (as the lead's stale contract still says).",
+      "file_scope": ["farewell.py", "test_farewell.py"],
+      "test_cmd": "python -m pytest -q test_farewell.py"
+    }
+  ]
+}

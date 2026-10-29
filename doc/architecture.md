@@ -307,6 +307,14 @@ Two cases on a real small repo: (1) two disjoint-scope tasks merge green autonom
 silently merge a break. Success = (1) zero-touch, (2) correctly escalated. Only then
 add worker types, Postgres, the architect role, the scope-expansion UX polish, and a UI.
 
+**Status.** Engine-level regression tests for both cases pass with scripted workers
+and an inspect-only fake sandbox (`tests/test_orchestrator.py`, `test_v1_case*`). The
+real-runtime run (Claude Code workers in Docker, Claude Code reviewer) is
+`examples/greeter`; its results are **unverified** until it has been run and recorded
+here. The greeter repo is a toy: passing it proves the mechanism, not the escalation
+rate. The v1 lead is a hand-written plan (`coordinator/lead.py`); its budget is per
+`run` invocation, in memory.
+
 ---
 
 ## 9. Risks

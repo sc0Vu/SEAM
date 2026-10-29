@@ -1,0 +1,20 @@
+{
+  "goal": "v1 case 1: two disjoint features (expect: both merge, zero human touch)",
+  "tasks": [
+    {
+      "key": "shout",
+      "type": "backend",
+      "description": "Create shout.py with shout(name: str) -> str returning greet(name) upper-cased (import greet from lib). Add test_shout.py with pytest tests.",
+      "spec_ref": "lib.greet(name) -> str is frozen; use it, do not change it.",
+      "file_scope": ["shout.py", "test_shout.py"],
+      "test_cmd": "python -m pytest -q test_shout.py"
+    },
+    {
+      "key": "count",
+      "type": "backend",
+      "description": "Create wordcount.py with count_words(text: str) -> int counting whitespace-separated words. Add test_wordcount.py with pytest tests.",
+      "file_scope": ["wordcount.py", "test_wordcount.py"],
+      "test_cmd": "python -m pytest -q test_wordcount.py"
+    }
+  ]
+}
