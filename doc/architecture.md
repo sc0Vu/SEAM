@@ -406,6 +406,36 @@ $0.10 with caching disabled for reviews, $0.09 with one-sentence approval notes
 (output 864 → 428 tokens); before the change, diff-only reviews cost ~$0.04. The
 planted `.upper()`→`.lower()` bug was still rejected. Single measurements.
 
+**boltons-bench-2: one goal with dependencies (2026-10-30, `examples/boltons/plan2.json`).**
+Goal: query-parameter editing for `URL`. 5 tasks: `OrderedMultiDict.setlist` (frozen
+contract) in `dictutils`; the same on urlutils' vendored OMD copy; `URL.replace_query`
+(blocked by `setlist`, since `QueryParamDict` subclasses `dictutils.OMD` in-package);
+`URL.without_query_params`; docs (blocked by the three it documents). Three tasks share
+`urlutils.py`. Same authorship caveat as bench-1; every dependency the author could
+see was declared.
+
+| result | value |
+|---|---|
+| merged / needs_human | **5 / 0** |
+| review rejections | 2, both fixed on the next run (see below) |
+| ordering | `setlist` ∥ vendored copy; `without_query_params` claimed only after the vendored copy merged (shared scope); `replace_query` only after `setlist` and `without_query_params` merged; docs last |
+| master | 786 passed |
+| cost | $1.35: workers $0.37 (7 runs), reviewer **$0.98** (7 reviews) |
+
+The two rejections were real: `setlist` matched keys by equality only (fixed to
+identity-then-equality, as `dict` does) and mishandled the absent-key path;
+`without_query_params` assigned `ret.query_params`, a `cachedproperty`, leaving the
+URL's `_query` text stale — a defect visible only from the original `urlutils.py`,
+which the reviewer now receives. (Those notes were reconstructed from the diffs:
+rejection notes were overwritten on approval until runs started keeping them.) The
+proxy refused one `POST /v1/messages/count_tokens`; it is now allowed.
+
+Read honestly: claim serialization, dependency ordering and the review loop all
+worked on real code, and no task escalated. The reviewer is now ~73% of cost:
+`urlutils.py` alone is ~55k characters, so each review read ~35k tokens on Opus.
+Escalation on real code is still unobserved; it needs a goal whose decomposition is
+wrong somewhere, which a careful hand-written plan rarely is.
+
 ## 9. Risks
 - **Semantic merge is unsolved in general** — escalation is a feature; the lever is
   decomposition/contract quality, not a cleverer merger.

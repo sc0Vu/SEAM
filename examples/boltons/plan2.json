@@ -1,0 +1,67 @@
+{
+  "goal": "boltons-bench-2-url-query-editing",
+  "tasks": [
+    {
+      "key": "omd_setlist",
+      "type": "backend",
+      "description": "Add OrderedMultiDict.setlist(key, values) to dictutils per the contract.",
+      "spec_ref": "CONTRACT setlist(key, values) on OrderedMultiDict: `values` is any iterable. If it is empty, every (key, *) pair is removed (no error if key is absent). Otherwise every existing (key, *) pair is removed and the new values are inserted, in order, at the position of the key's first existing occurrence in items(multi=True); if key was absent they are appended at the end. omd[key] then returns the last new value. Returns None. Also available on FastIterOrderedMultiDict. Docstring with doctest, and tests.",
+      "file_scope": [
+        "boltons/dictutils.py",
+        "tests/test_dictutils.py"
+      ],
+      "test_cmd": "python -m pytest -q --doctest-modules boltons/dictutils.py tests/test_dictutils.py"
+    },
+    {
+      "key": "vendored_setlist",
+      "type": "backend",
+      "description": "Add the same setlist(key, values) to the OrderedMultiDict copy vendored inside urlutils.py, so QueryParamDict behaves the same when dictutils is not importable.",
+      "spec_ref": "CONTRACT setlist(key, values) on OrderedMultiDict: `values` is any iterable. If it is empty, every (key, *) pair is removed (no error if key is absent). Otherwise every existing (key, *) pair is removed and the new values are inserted, in order, at the position of the key's first existing occurrence in items(multi=True); if key was absent they are appended at the end. omd[key] then returns the last new value. Returns None. Implement it on urlutils' own vendored OrderedMultiDict class (the copy after the 'What follows is the OrderedMultiDict from dictutils.py' comment); do not change dictutils.py. Tests against the vendored class directly.",
+      "file_scope": [
+        "boltons/urlutils.py",
+        "tests/test_urlutils.py"
+      ],
+      "test_cmd": "python -m pytest -q --doctest-modules boltons/urlutils.py tests/test_urlutils.py"
+    },
+    {
+      "key": "url_replace_query",
+      "type": "backend",
+      "description": "Add URL.replace_query(key, values) to urlutils returning a NEW URL with key's query values replaced, built on OrderedMultiDict.setlist.",
+      "spec_ref": "replace_query(key, values) -> URL. `values` is a str (one value), an iterable of str, or None. Returns a new URL; self is not mutated. Uses the new URL's query_params.setlist(key, values) (see the setlist CONTRACT: position of first occurrence is kept; None or empty removes the key). to_text() of the result reflects the change. CONTRACT setlist(key, values) on OrderedMultiDict: `values` is any iterable. If it is empty, every (key, *) pair is removed (no error if key is absent). Otherwise every existing (key, *) pair is removed and the new values are inserted, in order, at the position of the key's first existing occurrence in items(multi=True); if key was absent they are appended at the end. omd[key] then returns the last new value. Returns None.",
+      "file_scope": [
+        "boltons/urlutils.py",
+        "tests/test_urlutils.py"
+      ],
+      "test_cmd": "python -m pytest -q --doctest-modules boltons/urlutils.py tests/test_urlutils.py",
+      "blocked_by": [
+        "omd_setlist"
+      ]
+    },
+    {
+      "key": "url_without_query",
+      "type": "backend",
+      "description": "Add URL.without_query_params(*keys) to urlutils returning a NEW URL with every value of the given query keys removed.",
+      "spec_ref": "without_query_params(*keys) -> URL. Removes all values of each key; keys that are absent are ignored; other params keep their order; self is not mutated; with no keys it returns an equal copy. Tests including repeated keys.",
+      "file_scope": [
+        "boltons/urlutils.py",
+        "tests/test_urlutils.py"
+      ],
+      "test_cmd": "python -m pytest -q --doctest-modules boltons/urlutils.py tests/test_urlutils.py"
+    },
+    {
+      "key": "docs",
+      "type": "backend",
+      "description": "Document OrderedMultiDict.setlist, URL.replace_query and URL.without_query_params in the Sphinx docs.",
+      "spec_ref": "Add entries to docs/dictutils.rst and docs/urlutils.rst in the style the files already use (autoclass/automethod members or prose), describing behavior per the implemented docstrings. Do not edit Python files.",
+      "file_scope": [
+        "docs/dictutils.rst",
+        "docs/urlutils.rst"
+      ],
+      "blocked_by": [
+        "omd_setlist",
+        "url_replace_query",
+        "url_without_query"
+      ]
+    }
+  ]
+}
