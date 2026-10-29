@@ -94,3 +94,19 @@ def test_stage_and_commit_in_worktree(repo, tmp_path):
     head = w.commit_staged("task 1")
     assert g.rev_parse("seam/task-1") == head
     assert g.changed_files("main", "seam/task-1") == ["c.py"]
+
+
+def test_stage_all_skips_interpreter_byproducts(repo, tmp_path):
+    g = GitRepo(repo)
+    wt = tmp_path / "wt"
+    g.add_worktree(wt, "seam/task-1", "main")
+    for junk in ("__pycache__/a.cpython-313.pyc", "pkg/__pycache__/b.pyc",
+                 ".pytest_cache/v/cache/nodeids", "stray.pyc"):
+        (wt / junk).parent.mkdir(parents=True, exist_ok=True)
+        (wt / junk).write_text("junk")
+    w = GitRepo(wt)
+    assert w.stage_all() == ""  # tests ran, nothing was authored
+    (wt / "pkg" / "c.py").write_text("C = 1\n")
+    w.stage_all()
+    w.commit_staged("task 1")
+    assert g.changed_files("main", "seam/task-1") == ["pkg/c.py"]

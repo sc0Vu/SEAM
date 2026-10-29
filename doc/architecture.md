@@ -225,7 +225,9 @@ even though scopes are predicted, not known.
 **Tests and shared directories.** A task's tests count against its file_scope like any
 other file. Put them inside the module's scope (`auth/tests/**`) or a per-module test
 dir (`tests/auth/**`); a scope of plain `tests/**` overlaps every other task that adds
-tests and serializes them all.
+tests and serializes them all. Files that running code generates (`__pycache__/`,
+`*.pyc`, `.pytest_cache/`; `ARTIFACT_EXCLUDES` in `engine/git.py`) are never staged, so
+a worker that runs its tests does not trip the scope check with them.
 
 ---
 
