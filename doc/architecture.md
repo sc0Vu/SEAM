@@ -611,3 +611,40 @@ faulty assertion. Candidates: return a failing probe and the original code to th
 reviewer for one adjudication call before rejecting (changes the always-reject
 policy, so the owner's call), or require each probe to name the spec clause or
 original-code behavior it asserts.
+
+---
+
+## 12. Proposed (not built): the AI lead (LLM planner)
+
+**Constraint served: invariant 7, and an honest benchmark.** The v1 lead executes a
+hand-written plan, so every escalation rate so far measures its author's planning.
+An LLM planner writes the plan from a goal in prose; its plans, run unedited, are
+what the escalation rate should be measured on. (CLAUDE.md deferred this role until
+both v1 cases passed; they have, §8.)
+
+**Design.**
+- *Same output.* The planner emits exactly the plan format `load_plan` accepts (goal;
+  tasks with key, type, description, spec_ref, file_scope, blocked_by, test_cmd) and
+  goes through the same validation (unique keys, known deps, no cycles). Nothing
+  downstream changes.
+- *Behind an interface.* `Planner.plan(goal, repo_snapshot) -> PlanDraft` in
+  `coordinator/` (plain Python); the Claude Code adapter lives in a new `planners/`
+  package (invariants 7, 8: no runtime imports in the coordinator).
+- *Sandboxed, through the credential proxy.* The planner must read the repo, and repo
+  content can carry prompt injection; on the host its Read tool could reach any file
+  (e.g. `~/.ssh`) and smuggle it into task text. So it runs like a worker: in the
+  sandbox on the `seam-workers` network, over a `git archive` export (no `.git`),
+  with only Read/Glob/Grep, returning the plan as `--json-schema` structured output.
+- *Human checkpoint first.* `cli.py plan --repo R --goal "…" --out plan.json` writes the
+  plan for a human to read or edit before `run --plan`. Plan-and-run in one step comes
+  only after LLM plans are measured.
+- *Planning rules given to the model:* module/directory-level scopes with the tests
+  inside them; `blocked_by` for every task that uses another task's new API; a frozen
+  contract in `spec_ref` for any shared-interface change; an indivisible feature is one
+  task; report scopes that overlap (they will serialize).
+- *Cost* is charged to the goal's budget.
+
+**Measurement.** Give the planner the bench-1 and bench-2 goals in prose; compare its
+plans with the hand-written ones (tasks, scopes, deps); then run its plans unedited
+and record merged / needs_human — the first escalation rate not produced by the
+author's own planning.
