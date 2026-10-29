@@ -141,3 +141,36 @@ def test_recover_merging_requeues(tmp_path):
     assert [r.id for r in recovered] == [t.id]
     assert restarted.get(t.id).state is State.QUEUED_FOR_MERGE
     restarted.close()
+
+
+def test_cancel_cascades_to_dependents_only(store):
+    root = store.create(spec(["a/**"]))
+    child = store.create(spec(["b/**"], blocked_by=(root.id,)))
+    grandchild = store.create(spec(["c/**"], blocked_by=(child.id,)))
+    unrelated = store.create(spec(["d/**"]))
+    store.transition(root.id, Event.CANCEL)
+    states = {t.id: t.state for t in store.list()}
+    assert states == {
+        root.id: State.CANCELLED,
+        child.id: State.CANCELLED,
+        grandchild.id: State.CANCELLED,
+        unrelated.id: State.OPEN,
+    }
+
+
+def test_blocked_task_unblocks_once_scope_frees(store):
+    a = store.create(spec(["a/**"]))
+    b = store.create(spec(["b/**"]))
+    store.claim("w1", "backend")
+    store.claim("w2", "backend")
+    store.transition(a.id, Event.START)
+    store.transition(a.id, Event.REQUEST_SCOPE)
+    assert store.grant_scope(a.id, ["b/y.py"]).state is State.BLOCKED
+
+    # Retrying while b still holds b/** leaves a blocked and its scope unchanged.
+    still = store.grant_scope(a.id, ["b/y.py"])
+    assert (still.state, still.spec.file_scope) == (State.BLOCKED, ("a/**",))
+
+    store.transition(b.id, Event.CANCEL)
+    freed = store.grant_scope(a.id, ["b/y.py"])
+    assert (freed.state, freed.spec.file_scope) == (State.IN_PROGRESS, ("a/**", "b/y.py"))

@@ -143,6 +143,8 @@ class TaskStore:
         The new state comes from `engine.states.next_state` (so illegal events raise
         `IllegalTransition`); the update is a compare-and-swap on the current state.
         Taking the merge slot while another task holds it raises `MergeSlotBusy`.
+        Cancelling a task also cancels every task that (transitively) depends on it,
+        since a dependency that will never merge would leave them `open` forever.
         """
         unknown = set(fields) - _UPDATABLE
         if unknown:
@@ -160,11 +162,18 @@ class TaskStore:
                 raise MergeSlotBusy(task_id) from e
             if cur.rowcount != 1:
                 raise StaleState(task_id)
+            if new_state is State.CANCELLED:
+                _cascade_cancel(db, task_id)
         return self.get(task_id)
 
     def grant_scope(self, task_id: int, extra_globs: list[str]) -> Task:
         """Grant a scope-expansion request iff the expanded scope stays disjoint from
-        every other scope-holding task (invariant 3); otherwise deny -> `blocked`."""
+        every other scope-holding task (invariant 3).
+
+        From `scope_requested`: grant -> `in_progress`, or deny -> `blocked`.
+        From `blocked` (the lead retrying a denied request): grant -> `in_progress`
+        (`unblock`), or leave the task `blocked` and unchanged if it still clashes.
+        """
         with self._tx() as db:
             task = self.get(task_id)
             new_scope = [*task.spec.file_scope, *extra_globs]
@@ -176,7 +185,12 @@ class TaskStore:
                 for o in others
                 if o["state"] in SCOPE_HOLDING
             )
-            event = Event.DENY_SCOPE if clash else Event.GRANT_SCOPE
+            if task.state is State.BLOCKED:
+                if clash:
+                    return task
+                event = Event.UNBLOCK
+            else:
+                event = Event.DENY_SCOPE if clash else Event.GRANT_SCOPE
             new_state, attempts = next_state(task.state, event, task.attempts, self.max_attempts)
             scope = task.spec.file_scope if clash else new_scope
             cur = db.execute(
@@ -195,6 +209,21 @@ class TaskStore:
         """
         stuck = self.list(State.MERGING)
         return [self.transition(t.id, Event.RECOVER) for t in stuck]
+
+
+def _cascade_cancel(db: sqlite3.Connection, root_id: int) -> None:
+    """Cancel every non-terminal task that transitively depends on `root_id`."""
+    pending = [root_id]
+    while pending:
+        cancelled = pending.pop()
+        rows = db.execute("SELECT id, state, blocked_by FROM tasks").fetchall()
+        for r in rows:
+            if cancelled not in json.loads(r["blocked_by"]):
+                continue
+            if r["state"] in (State.MERGED, State.CANCELLED, State.MERGING):
+                continue
+            db.execute("UPDATE tasks SET state = ? WHERE id = ?", (State.CANCELLED, r["id"]))
+            pending.append(r["id"])
 
 
 def _to_task(row: sqlite3.Row) -> Task:

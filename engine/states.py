@@ -44,6 +44,8 @@ class Event(StrEnum):
     MERGE_CLEAN = "merge_clean"
     MERGE_CONFLICT = "merge_conflict"
     RESOLVE = "resolve"
+    REWORK = "rework"
+    UNBLOCK = "unblock"
     RECOVER = "recover"
     CANCEL = "cancel"
 
@@ -62,6 +64,7 @@ _TRANSITIONS: dict[tuple[State, Event], State] = {
     (State.IN_PROGRESS, Event.REQUEST_SCOPE): State.SCOPE_REQUESTED,
     (State.SCOPE_REQUESTED, Event.GRANT_SCOPE): State.IN_PROGRESS,
     (State.SCOPE_REQUESTED, Event.DENY_SCOPE): State.BLOCKED,
+    (State.BLOCKED, Event.UNBLOCK): State.IN_PROGRESS,
     (State.IN_PROGRESS, Event.SUBMIT): State.SUBMITTED,
     (State.SUBMITTED, Event.PICKUP): State.IN_REVIEW,
     (State.IN_REVIEW, Event.APPROVE): State.APPROVED,
@@ -71,6 +74,7 @@ _TRANSITIONS: dict[tuple[State, Event], State] = {
     (State.MERGING, Event.MERGE_CLEAN): State.MERGED,
     (State.MERGING, Event.MERGE_CONFLICT): State.NEEDS_HUMAN,
     (State.NEEDS_HUMAN, Event.RESOLVE): State.QUEUED_FOR_MERGE,
+    (State.NEEDS_HUMAN, Event.REWORK): State.IN_PROGRESS,
     (State.MERGING, Event.RECOVER): State.QUEUED_FOR_MERGE,
 }
 
@@ -86,6 +90,8 @@ def next_state(
     - `request_changes` counts an attempt; reaching `max_attempts` routes to
       `needs_human` instead of back to `in_progress` (invariant 11, bounded retries).
     - `merge_conflict` also counts an attempt, for the record (it always escalates).
+    - `rework` (a human sends an escalated task back to its branch) resets attempts:
+      the human's judgment starts a fresh retry budget.
     - `cancel` is legal from any non-terminal state except `merging`: a merge in flight
       must finish or be recovered, never abandoned half-applied (invariant 12).
     """
@@ -98,6 +104,8 @@ def next_state(
     if target is None:
         raise IllegalTransition(state, event)
 
+    if event is Event.REWORK:
+        return target, 0
     if event in (Event.REQUEST_CHANGES, Event.MERGE_CONFLICT):
         attempts += 1
         if attempts >= max_attempts:

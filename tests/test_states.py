@@ -72,3 +72,20 @@ def test_scope_holding_covers_every_state_with_a_live_branch():
         State.MERGING, State.NEEDS_HUMAN,
     }
     assert SCOPE_HOLDING == expected
+
+
+def test_blocked_can_resume_or_cancel():
+    assert next_state(State.BLOCKED, Event.UNBLOCK, 1)[0] is State.IN_PROGRESS
+    assert next_state(State.BLOCKED, Event.CANCEL, 1)[0] is State.CANCELLED
+
+
+def test_rework_from_needs_human_resets_retry_budget():
+    review = [Event.SUBMIT, Event.PICKUP, Event.REQUEST_CHANGES]
+    state, attempts = walk([Event.CLAIM, Event.START, *review * 3])
+    assert (state, attempts) == (State.NEEDS_HUMAN, 3)
+    assert next_state(state, Event.REWORK, attempts) == (State.IN_PROGRESS, 0)
+
+
+def test_rework_only_from_needs_human():
+    with pytest.raises(IllegalTransition):
+        next_state(State.IN_REVIEW, Event.REWORK, 0)

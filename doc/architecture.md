@@ -83,21 +83,28 @@ a shared interface unilaterally (the main source of semantic conflicts).
 open ─claim(worker)─▶ claimed ─start─▶ in_progress ─submit─▶ submitted
 in_progress ─needs files outside scope─▶ scope_requested ─grant(lead)─▶ in_progress
                                                         ─deny(lead)──▶ blocked
+blocked ─unblock(lead re-grants once disjoint)─▶ in_progress
 submitted ─pickup(reviewer)─▶ in_review
 in_review ─approve─▶ approved ─auto─▶ queued_for_merge
 in_review ─changes_requested─▶ in_progress            (same worker/branch; bounded)
 queued_for_merge ─take(merge engine, SINGLE SLOT)─▶ merging
 merging ─clean─▶ merged                               (→ wake lead)
 merging ─textual or semantic conflict─▶ needs_human
-needs_human ─resolve(human/architect)─▶ queued_for_merge
+needs_human ─resolve(human/architect)─▶ queued_for_merge   (branch is fine as-is)
+needs_human ─rework(human)─▶ in_progress                 (attempts reset to 0)
 (attempts exceeded on review/merge) ─▶ needs_human
-any non-terminal except merging ─cancel(lead)─▶ cancelled
+any non-terminal except merging ─cancel(lead)─▶ cancelled   (cascades to dependents)
 on restart: any task in `merging` ─rollback+requeue─▶ queued_for_merge
 ```
 
 Implemented as a pure transition table in `engine/states.py` (`next_state`); the store
 routes every state change through it. `cancel` is refused while `merging` — a merge in
-flight finishes or is recovered, never abandoned half-applied.
+flight finishes or is recovered, never abandoned half-applied. Cancelling a task
+cancels every task that transitively lists it in `blocked_by`: they could never be
+claimed, and would otherwise sit `open` forever. `rework` resets the retry budget
+because a human's judgment has replaced the loop that exhausted it; `resolve` is for a
+branch that needs no further edits (e.g. the human fixed main), `rework` for one that
+does (e.g. escalated after failing review).
 
 **Scope-holding states.** A task's file_scope stays reserved (§5) in every state
 except `open`, `merged`, and `cancelled` — i.e. whenever a branch with live edits
