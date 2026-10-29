@@ -396,6 +396,14 @@ the escalation rate a real goal would see. Two findings:
 - *Review cost ~= worker cost.* Opus 5.5 reviews wrote ~1.2k output tokens each, much
   of it in approval notes nobody acts on.
 
+Follow-up (same day): the gate now passes the changed files' original text (§2).
+Re-reviewing the `LRI.resize` branch with it, the reviewer checked the change against
+`cacheutils.py` itself instead of memory. Cost of that one review (21k input tokens,
+Opus 5.5): $0.19 with Claude Code's prompt caching (all cache writes, never reused),
+$0.10 with caching disabled for reviews, $0.09 with one-sentence approval notes
+(output 864 → 428 tokens); before the change, diff-only reviews cost ~$0.04. The
+planted `.upper()`→`.lower()` bug was still rejected. Single measurements.
+
 ## 9. Risks
 - **Semantic merge is unsolved in general** — escalation is a feature; the lever is
   decomposition/contract quality, not a cleverer merger.

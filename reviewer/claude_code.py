@@ -47,7 +47,9 @@ Approve only if ALL hold:
 3. the change includes tests that exercise it (they already pass; output is given);
 4. it does not change a shared interface unless the task says to.
 
-If you reject, `notes` must tell the author exactly what to fix. Keep notes short.
+If you reject, `notes` must tell the author exactly what to fix. If you approve,
+`notes` is one sentence naming what you verified against the original files; a
+human reads it only when auditing, so do not restate the diff.
 """
 
 _PROMPT = """\
