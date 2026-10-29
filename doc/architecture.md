@@ -146,7 +146,12 @@ a single orchestrator process is the sole writer.)
 **Scope granularity + the chicken-and-egg.** The lead can't perfectly predict exact
 files for a new feature, so **file_scope is declared at module/directory granularity**
 (globs like `auth/**`, `api/users.*`), not exact file lists, and overlap is tested on
-those globs. When a worker discovers mid-task that it must touch something outside its
+those globs. Array `&&` in the SQL above only matches *identical* strings (`auth/**`
+vs `auth/login.py` would pass as disjoint), so overlap is a real glob test
+(`engine/scope.py`): segment-wise, `**` overlaps anything below it, a wildcard segment
+is matched against a literal one, and two wildcard segments are assumed to meet. It is
+**conservative** — false "overlap" only serializes two tasks; a false "disjoint" would
+break invariant 2, and it never reports one. When a worker discovers mid-task that it must touch something outside its
 scope, it transitions `in_progress → scope_requested` with the paths; the lead
 re-checks disjointness against all in-flight tasks and either grants (expands
 file_scope) or denies (→ `blocked`, re-planned later). This keeps invariant 2 true
