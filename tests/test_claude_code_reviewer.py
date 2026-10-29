@@ -109,12 +109,15 @@ def test_probes_requested_parsed_and_sanitized():
            {"name": "test_alias_qp", "code": "def test_b(): assert 1"},  # same stem
            {"name": "empty", "code": "   "},  # dropped
            {"name": "../../etc", "code": "def test_c(): assert 1"},
-           {"name": "four", "code": "def test_d(): assert 1"}]
+           {"name": "four.py", "code": "def test_d(): assert 1"}]
     runner = FakeRunner(result(structured_output={"approve": True, "notes": "", "probes": raw}))
     r = ClaudeCodeReviewer(runner=runner, probes=True)
     probes = r.review(request()).probes
     assert [p.name for p in probes] == [
         "test_probe_alias_qp.py", "test_probe_alias_qp_2.py", "test_probe_etc.py"]  # max 3
+    named = ClaudeCodeReviewer(probes=True, runner=FakeRunner(result(structured_output={
+        "approve": True, "notes": "", "probes": [{"name": "edge.py", "code": "x = 1"}]})))
+    assert named.review(request()).probes[0].name == "test_probe_edge.py"  # no _py.py
     argv = runner.calls[0][0]
     assert json.loads(argv[argv.index("--json-schema") + 1])["required"] == [
         "approve", "notes", "probes"]

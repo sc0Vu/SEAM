@@ -122,7 +122,8 @@ def _probes(raw: object) -> tuple[Probe, ...]:
     for item in raw if isinstance(raw, list) else []:
         if not isinstance(item, dict) or not str(item.get("code", "")).strip():
             continue
-        stem = re.sub(r"[^a-z0-9_]+", "_", str(item.get("name", "")).lower()).strip("_")
+        raw_name = re.sub(r"\.py$", "", str(item.get("name", "")).strip().lower())
+        stem = re.sub(r"[^a-z0-9_]+", "_", raw_name).strip("_")
         stem = re.sub(r"^(test_)?(probe_)?", "", stem)[:40] or "probe"
         name, n = f"test_probe_{stem}.py", 2
         while name in seen:
