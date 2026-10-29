@@ -209,15 +209,28 @@ trust the worker), (2) the diff implements the spec, not something adjacent, (3)
 correctness/security red flags, (4) stayed in file_scope. → approve | changes_requested
 (bounded; exceed → needs_human).
 
-**Merge gate** (single slot, serialized, crash-safe): for the one task in `merging` —
-1. checkout main; merge/rebase the branch.
+**Merge gate** (single slot, serialized, crash-safe; `engine/merge.py`): for the one
+task in `merging` (next taken = priority desc, id asc) —
+1. trial-merge the branch onto current main with **no working tree**:
+   `git merge-tree --write-tree`, then `commit-tree` → a two-parent merge commit
+   that no ref points at yet.
 2. textual conflict → `needs_human`, always (v1). Disjoint file_scopes make one
    impossible between SEAM tasks, so a textual conflict means main changed outside
    SEAM — a human's call, not an auto-resolver's.
 3. **run the FULL test suite on the MERGED tree** in the sandbox (integration check —
-   distinct from the reviewer's branch-level run).
-4. green → commit merge, mark merged, wake lead; red → `needs_human`.
-5. release slot; next queued task rebases onto the new main.
+   distinct from the reviewer's branch-level run). The tree is `git archive`d into a
+   temp dir — a plain copy with no `.git`, so the sandboxed suite can't reach the repo.
+4. green → publish (below), mark merged, wake lead; red or timed out → `needs_human`
+   with the suite's output tail in `review_notes`.
+5. release slot; the next queued task is merged against the new main.
+If main's compare-and-swap fails (main moved outside SEAM mid-suite), nothing was
+published and the task is requeued to merge against the new main. Any unexpected error
+before publishing also requeues (main untouched) and re-raises. All engine git calls
+run with hooks disabled, so no repository-supplied code executes on the host.
+
+**The target branch must not be checked out** in any working tree: moving a checked-out
+branch's ref leaves that tree's files stale. The engine refuses (`TargetCheckedOut`);
+run SEAM against a dedicated clone of the real repo.
 Crash-safety: the merge commit is built off main on a throwaway ref and the suite runs
 on it there; main is never touched until both gates have passed. Publishing is then:
 (a) record `base_sha`/`merge_sha` on the task, (b) compare-and-swap main from
