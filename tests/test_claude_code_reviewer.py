@@ -47,6 +47,10 @@ def test_runs_with_no_tools_and_schema_and_diff_on_stdin():
     ClaudeCodeReviewer(runner=runner, model="m").review(request())
     argv, prompt = runner.calls[0]
     assert argv[argv.index("--tools") + 1] == ""
+    # Fixed rules are the system prompt; nothing from the host's setup leaks in.
+    assert "independent code reviewer" in argv[argv.index("--system-prompt") + 1]
+    assert argv[argv.index("--setting-sources") + 1] == "project"
+    assert "--disable-slash-commands" in argv and "--strict-mcp-config" in argv
     assert json.loads(argv[argv.index("--json-schema") + 1])["required"] == ["approve", "notes"]
     assert "+x = 1" not in " ".join(argv)  # the diff never goes through argv
     assert "+x = 1" in prompt and "contract §2" in prompt and "untrusted" in prompt
