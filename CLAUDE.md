@@ -52,8 +52,10 @@ broken). Do not add worker types, Postgres, a UI, or the architect role until bo
 10. **Sandboxed execution.** Agent-WRITTEN code, build steps, and all test runs
     execute in a sandbox (container), never on the host. A worker's diff is data
     until it has passed review and merge; its tests are untrusted code.
-11. **Bounded retries.** A task that fails review or merge a fixed number of times
-    (default 3) goes to `needs_human` — it never loops `changes_requested` forever.
+11. **Bounded retries.** A task that fails review a fixed number of times (default 3)
+    goes to `needs_human` — it never loops `changes_requested` forever. A merge
+    failure (textual or semantic) escalates on the FIRST failure; there is no merge
+    retry loop to bound.
 12. **Crash-safe merge.** Main moves only after both gates pass, and the merge commit
     is recorded before it does. On restart, a task stuck in `merging` whose merge
     commit is on main is finished as `merged`; any other is requeued. A partial merge

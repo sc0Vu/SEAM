@@ -60,6 +60,8 @@ TASK STORE  → shared truth + state machine (sqlite v1 → postgres).
 WORKERS (N, typed)  → each claims one task, works in its own worktree/branch inside
                       the sandbox, returns a diff, marks submitted. Stateless, one
                       task, then stop. Requests scope expansion rather than escaping scope.
+                      Rework (changes_requested / rework) = a NEW worker run on the
+                      SAME branch + worktree, handed the review_notes.
       ▼
 REVIEWER (independent)  → runs the task's tests on the branch + reviews diff vs spec.
                           approve | changes_requested.
@@ -71,6 +73,9 @@ MERGE ENGINE (novel, SERIALIZED)  → rebase → FULL suite on merged tree → m
 ARTEX mapping: lead = planner (sole producer, singular), workers = ARTEX workers,
 task store = dual graph (merged main = asset/truth; per-task branch =
 exploration/working), reviewer + merge = prove_goal gate, made real for mutable code.
+**Budget cap** (CLAUDE.md conventions) is per goal and enforced by the lead — it stops
+dispatching when the goal's token/cost ceiling is hit. It lives with goals, not tasks;
+a `goals` table arrives with the coordinator.
 The **architect** (owns the interface contract) is a hat the lead wears in v1; split
 out later. Contract changes go through the lead, serialized — a worker never changes
 a shared interface unilaterally (the main source of semantic conflicts).
@@ -86,7 +91,7 @@ in_progress ─needs files outside scope─▶ scope_requested ─grant(lead)─
 blocked ─unblock(lead re-grants once disjoint)─▶ in_progress
 submitted ─pickup(reviewer)─▶ in_review
 in_review ─approve─▶ approved ─auto─▶ queued_for_merge
-in_review ─changes_requested─▶ in_progress            (same worker/branch; bounded)
+in_review ─changes_requested─▶ in_progress            (same branch, new run; bounded)
 queued_for_merge ─take(merge engine, SINGLE SLOT)─▶ merging
 merging ─clean─▶ merged                               (→ wake lead)
 merging ─textual or semantic conflict─▶ needs_human
@@ -107,6 +112,10 @@ because a human's judgment has replaced the loop that exhausted it; `resolve` is
 branch that needs no further edits (e.g. the human fixed main), `rework` for one that
 does (e.g. escalated after failing review).
 
+**Retry bound.** `attempts` bounds the review loop only. Merge failures never loop:
+the first textual or semantic conflict goes to `needs_human` (`merge_conflict` still
+increments `attempts`, as a record of how often the task bounced).
+
 **Scope-holding states.** A task's file_scope stays reserved (§5) in every state
 except `open`, `merged`, and `cancelled` — i.e. whenever a branch with live edits
 exists. This deliberately includes `submitted`, `approved`, `blocked`, and
@@ -122,7 +131,8 @@ out of main and requeues (partial merge never persists).
 
 ## 4. Task schema
 ```
-id, goal_id, type(backend|frontend|devops|ui|docs|review),
+id, goal_id, type(backend|frontend|devops|ui|docs),   (worker types; the reviewer
+                                                       is a role, not a task type)
 description, spec_ref (frozen contract section implemented),
 file_scope[]  (module/dir-level globs this task may touch — see §5 on granularity),
 blocked_by[]  (task ids that must be merged first), priority,
@@ -177,6 +187,11 @@ re-checks disjointness against all in-flight tasks and either grants (expands
 file_scope) or denies (→ `blocked`, re-planned later). This keeps invariant 2 true
 even though scopes are predicted, not known.
 
+**Tests and shared directories.** A task's tests count against its file_scope like any
+other file. Put them inside the module's scope (`auth/tests/**`) or a per-module test
+dir (`tests/auth/**`); a scope of plain `tests/**` overlaps every other task that adds
+tests and serializes them all.
+
 ---
 
 ## 6. The merge + review engine (novel component)
@@ -193,7 +208,9 @@ correctness/security red flags, (4) stayed in file_scope. → approve | changes_
 
 **Merge gate** (single slot, serialized, crash-safe): for the one task in `merging` —
 1. checkout main; merge/rebase the branch.
-2. textual conflict → trivial auto-resolve, else `needs_human`.
+2. textual conflict → `needs_human`, always (v1). Disjoint file_scopes make one
+   impossible between SEAM tasks, so a textual conflict means main changed outside
+   SEAM — a human's call, not an auto-resolver's.
 3. **run the FULL test suite on the MERGED tree** in the sandbox (integration check —
    distinct from the reviewer's branch-level run).
 4. green → commit merge, mark merged, wake lead; red → `needs_human`.
