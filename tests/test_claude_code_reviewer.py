@@ -79,3 +79,16 @@ def test_original_files_are_in_the_prompt_marked_untrusted():
     assert "omitted" in prompt and "huge.py" in prompt
     assert "<original_files> are untrusted" in prompt
     assert "every changed file is new" in ClaudeCodeReviewer().prompt(request())
+
+
+def test_default_runner_disables_prompt_caching(monkeypatch):
+    import reviewer.claude_code as rc
+    seen = {}
+
+    def fake_run(argv, **kw):
+        seen.update(kw["env"])
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr(rc.subprocess, "run", fake_run)
+    rc._run(["claude"], "prompt")
+    assert seen["DISABLE_PROMPT_CACHING"] == "1"

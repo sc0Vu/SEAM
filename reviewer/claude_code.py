@@ -15,6 +15,7 @@ across reviews, so it is served from the prompt cache.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import tempfile
 from collections.abc import Callable
@@ -84,10 +85,16 @@ class ReviewFailed(SeamError):
     """The review run itself failed (no verdict); the task is re-reviewed, bounded."""
 
 
+# Each review is a one-shot call whose prompt (diff + original files) is never sent
+# again, so writing it to the prompt cache only adds the cache-write surcharge.
+# Measured on boltons LRI.resize (21k input tokens, Opus 5.5): $0.19 cached, $0.10 not.
+REVIEW_ENV = {"DISABLE_PROMPT_CACHING": "1"}
+
+
 def _run(argv: list[str], prompt: str) -> subprocess.CompletedProcess[str]:
     with tempfile.TemporaryDirectory(prefix="seam-reviewer-") as cwd:  # no project config
         return subprocess.run(argv, input=prompt, capture_output=True, text=True,
-                              cwd=cwd, timeout=900)
+                              cwd=cwd, timeout=900, env={**os.environ, **REVIEW_ENV})
 
 
 class ClaudeCodeReviewer:
