@@ -1,5 +1,7 @@
 import shutil
 import subprocess
+import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -54,20 +56,28 @@ def test_worker_options_pass_env_by_name_and_overlay_readonly(tmp_path):
 IMAGE = "python:3.13-slim"  # any small image works for these behavior checks
 
 
+@pytest.fixture
+def workdir():
+    """A work dir under $HOME: Colima (and Docker Desktop by default) share only $HOME
+    with containers, so a pytest tmp_path under /var/folders mounts as empty."""
+    with tempfile.TemporaryDirectory(prefix=".seam-test-", dir=Path.home()) as d:
+        yield Path(d)
+
+
 @needs_docker
-def test_exit_code_and_output_come_back(tmp_path):
-    (tmp_path / "f.txt").write_text("hello")
-    res = DockerSandbox(IMAGE).run("cat f.txt; exit 3", tmp_path, timeout=120)
+def test_exit_code_and_output_come_back(workdir):
+    (workdir / "f.txt").write_text("hello")
+    res = DockerSandbox(IMAGE).run("cat f.txt; exit 3", workdir, timeout=120)
     assert (res.exit_code, res.output.strip()) == (3, "hello")
 
 
 @needs_docker
-def test_no_network(tmp_path):
+def test_no_network(workdir):
     cmd = "python -c \"import socket; socket.create_connection(('1.1.1.1', 53), 3)\""
-    assert not DockerSandbox(IMAGE).run(cmd, tmp_path, timeout=120).ok
+    assert not DockerSandbox(IMAGE).run(cmd, workdir, timeout=120).ok
 
 
 @needs_docker
-def test_timeout_kills_container(tmp_path):
-    res = DockerSandbox(IMAGE).run("sleep 60", tmp_path, timeout=3)
+def test_timeout_kills_container(workdir):
+    res = DockerSandbox(IMAGE).run("sleep 60", workdir, timeout=3)
     assert res.timed_out and not res.ok
