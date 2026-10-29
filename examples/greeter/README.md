@@ -22,10 +22,12 @@ the escalation-rate benchmark, which needs a real codebase.
 colima start
 docker build -t seam-sandbox sandbox/
 
-# 1. auth for the workers, which run inside containers. Pass it by env var only.
+# 1. auth for the workers. Set exactly ONE of these, by env var only. It is handed
+#    to SEAM's credential proxy; worker containers only ever see a placeholder.
 claude setup-token                      # prints a long-lived token
-export CLAUDE_CODE_OAUTH_TOKEN=...      # or: export ANTHROPIC_API_KEY=...
-#    (the reviewer runs on the host with tools disabled, using your normal login)
+read -s "CLAUDE_CODE_OAUTH_TOKEN?token: " && export CLAUDE_CODE_OAUTH_TOKEN
+#    (or ANTHROPIC_API_KEY; the reviewer runs on the host with tools disabled,
+#    using your normal login)
 
 # 2. paths must live under $HOME: colima shares only $HOME with containers
 examples/greeter/make_repo.sh ~/seam-demo/case1

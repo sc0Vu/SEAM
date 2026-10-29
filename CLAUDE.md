@@ -61,7 +61,8 @@ broken). Do not add worker types, Postgres, a UI, or the architect role until bo
     commit is on main is finished as `merged`; any other is requeued. A partial merge
     never reaches main.
 13. **Secrets via env only.** LLM/agent API keys from env vars; never hard-coded or
-    committed. `.env` and `*.local.*` gitignored.
+    committed. `.env` and `*.local.*` gitignored. Agent containers never hold a real
+    credential; model API calls go through the SEAM credential proxy.
 
 ## Tech (v1 choices — revisable, flagged as such)
 - **Python** orchestrator + engine (matches worker runtimes; fastest to skeleton).

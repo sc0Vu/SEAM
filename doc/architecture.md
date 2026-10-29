@@ -42,11 +42,11 @@ worker runtime as pluggable.**
   command with only the work dir mounted, `--network none`, `--cap-drop ALL`,
   `no-new-privileges`, and memory/pid caps. Image: `sandbox/Dockerfile`
   (`seam-sandbox`: python + pytest + Claude Code). Test runs get `--network none`.
-  Worker runs need the model API, so they get a network and their API key passed by
-  env-var *name*; the worktree's `.git` pointer is overlaid read-only so a worker
-  cannot repoint the host's git at a hostile config. A worker container *can* reach
-  the network — accepted for v1 because the worker must call the API; it still never
-  touches the host filesystem beyond its worktree.
+  Worker runs need the model API, so they run on the `--internal` network
+  `seam-workers`, whose only reachable host is SEAM's credential proxy (§10). They
+  get the proxy's URL and a *placeholder* credential; the real one is held only by
+  the proxy. The worktree's `.git` pointer is overlaid read-only so a worker cannot
+  repoint the host's git at a hostile config.
 - **Product = coordinator + merge/review engine** — the novel IP.
 
 Rejected as *the architecture*: Claude Code agent teams and AgentScope — fine as
@@ -359,10 +359,10 @@ same file_scopes and could never be claimed).
 
 ---
 
-## 10. Proposed (not built): credential proxy for worker containers
+## 10. Credential proxy for worker containers
 
-**Constraint served: safety (invariants 10 and 13).** Today a worker container holds
-the real API credential in its environment *and* has open network egress (§1). The
+**Constraint served: safety (invariants 10 and 13).** Before this, a worker container
+held the real API credential in its environment *and* had open network egress. The
 worker runs an agent over untrusted repo content, so a prompt-injected worker can read
 the credential and send it, or the repo, anywhere. For OAuth that credential is a
 long-lived subscription token. This is the main gap before SEAM runs on a real repo.
@@ -387,13 +387,24 @@ worker container ──(internal net, no egress)──▶ seam-proxy ──(brid
   uses the matching auth mode and headers, plus
   `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`.
 
+**Built** in `sandbox/proxy.py` (the proxy) and `CredentialProxyContainer` in
+`sandbox/docker.py` (network + container lifecycle); `cli.py run` starts it, then
+checks from the worker network that the proxy answers and that `1.1.1.1:443` is
+unreachable, before any agent runs. Exactly one credential env var may be set. The
+proxy serves only clients from the internal network's subnet, and its log (request
+lines and refusals, never headers) is kept when it stops; `run` prints any refusals.
+
 **Evidence so far (2026-10-30, Claude Code 2.1.312).** A probe with
 `ANTHROPIC_BASE_URL` pointing at a logging stub on an `--internal` network and a dummy
 `CLAUDE_CODE_OAUTH_TOKEN` showed that Claude Code sends only `POST /v1/messages?beta=true`
 with `Authorization: Bearer <dummy>` and the `oauth-2025-04-20` beta header, and
 attempts nothing else. The stub returned 401, so no request reached Anthropic.
-**Unverified:** that a forwarded request succeeds end to end, and that a run with
-tools makes no other calls (e.g. web fetch, which would now be blocked).
+**End to end (2026-10-30):** greeter case 1 with `--workers 2` through the proxy:
+both tasks `merged`, zero touch, main suite green (10 passed), no requests refused,
+proxy container removed afterwards. Reported cost $0.22, against $0.08 for the same
+case without the proxy; one run each, so whether the proxy affects cost (e.g. prompt
+caching) is **unverified**. A worker task that needs other endpoints (web fetch, MCP)
+would now be refused; none of the greeter tasks did.
 
 **What it fixes.** The credential never enters a worker container. Workers lose all
 egress except the model API, so they can't exfiltrate the repo to third parties or
@@ -414,9 +425,6 @@ with the host login and is unaffected.
 - *Egress firewall only*, keeping the real token in the container: stops sending it
   elsewhere, but the token still sits in an environment the agent can read.
 
-**Changes if approved.** `sandbox/proxy.py` and its tests (header swap, allowlist,
-streaming); proxy and network lifecycle in `cli.py`, with a preflight probe through
-the proxy; the worker `DockerSandbox` gets `network="seam-workers"` and fixed dummy env
-values (the one place real values never appear); §1 updated. Proposed constitution
-change, to invariant 13: "Agent containers never hold a real credential; model API
-calls go through the SEAM credential proxy."
+The isolation itself is tested against real containers
+(`test_real_proxy_reachable_only_from_the_internal_network`: health answers, other
+endpoints get 403, no route to the internet).

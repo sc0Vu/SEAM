@@ -21,11 +21,25 @@ from engine.orchestrator import Orchestrator
 from engine.states import TERMINAL, State
 from reviewer.claude_code import ClaudeCodeReviewer
 from reviewer.gate import ReviewGate
-from sandbox.docker import DEFAULT_IMAGE, DockerSandbox
+from sandbox.docker import DEFAULT_IMAGE, CredentialProxyContainer, DockerSandbox
+from sandbox.proxy import CREDENTIAL_KINDS
 from store import TaskStore
 from workers.claude_code import ClaudeCodeWorker
 
-AUTH_ENV = ("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN")
+AUTH_ENV = tuple(CREDENTIAL_KINDS)  # the real one goes only to the credential proxy
+
+_PROXY_PROBE = """python3 - <<'EOF'
+import socket, time, urllib.request
+for _ in range(50):
+    try:
+        urllib.request.urlopen('{health}', timeout=2).read(); print('proxy ok'); break
+    except OSError:
+        time.sleep(0.2)
+try:
+    socket.create_connection(('1.1.1.1', 443), 3); print('egress open')
+except OSError:
+    print('egress blocked')
+EOF"""
 
 
 class PreflightError(SeamError):
@@ -45,10 +59,22 @@ def cmd_add_goal(args: argparse.Namespace) -> None:
         print(f"task {t.id:>3}  {key:<20} {t.spec.type:<9} scope={list(t.spec.file_scope)}")
 
 
-def preflight(args: argparse.Namespace, repo: GitRepo, sandbox: DockerSandbox) -> None:
-    if not any(os.environ.get(k) for k in AUTH_ENV):
+def select_credential() -> str:
+    """The one credential env var the proxy will hold. Exactly one must be set, so
+    which account pays is never ambiguous."""
+    present = [k for k in AUTH_ENV if os.environ.get(k)]
+    if not present:
         raise PreflightError(f"workers need one of {AUTH_ENV} in the environment "
                              "(e.g. `claude setup-token`, then export CLAUDE_CODE_OAUTH_TOKEN)")
+    if len(present) > 1:
+        raise PreflightError(f"both {present} are set; unset one so it is clear which "
+                             "account the workers use")
+    return present[0]
+
+
+def preflight(args: argparse.Namespace, repo: GitRepo, sandbox: DockerSandbox) -> str:
+    """Check everything a run needs before any tokens are spent; return the credential."""
+    credential = select_credential()
     if shutil.which("claude") is None:
         raise PreflightError("the reviewer needs the `claude` CLI on PATH")
     if repo.checked_out_in(args.target):
@@ -67,19 +93,38 @@ def preflight(args: argparse.Namespace, repo: GitRepo, sandbox: DockerSandbox) -
     if not sandbox.run("test -f .seam-probe", probe, timeout=120).ok:
         raise PreflightError(f"{args.state_dir} is not visible inside containers "
                              "(colima shares only $HOME by default: use a state dir under it)")
+    return credential
+
+
+def check_proxy(proxy: CredentialProxyContainer, image: str, probe_dir: Path) -> None:
+    """From the worker network: the proxy must answer and nothing else be reachable."""
+    box = DockerSandbox(image, network=proxy.network)
+    out = box.run(_PROXY_PROBE.format(health=proxy.health_url), probe_dir, timeout=120).output
+    if "proxy ok" not in out:
+        raise PreflightError(f"credential proxy not reachable from {proxy.network}: {out[-300:]}")
+    if "egress blocked" not in out:
+        raise PreflightError(f"{proxy.network} is not isolated: workers could reach the internet")
 
 
 def cmd_run(args: argparse.Namespace) -> None:
     repo = GitRepo(args.repo)
     tests = DockerSandbox(args.image)
-    preflight(args, repo, tests)
+    credential = preflight(args, repo, tests)
     if args.plan:
         cmd_add_goal(args)
     store = _store(args.state_dir)
     scratch = args.state_dir / "tmp"
+    with CredentialProxyContainer(credential, args.image) as proxy:
+        check_proxy(proxy, args.image, scratch)
+        _run_team(args, store, repo, tests, scratch, proxy)
+    for line in proxy.refused():
+        print(f"warning: {line}")
 
-    worker_box = DockerSandbox(args.image, network="bridge", env_names=AUTH_ENV,
-                               readonly=(".git",))
+
+def _run_team(args, store, repo, tests, scratch, proxy) -> None:
+    # Workers see only the proxy URL and a placeholder credential (doc §10).
+    worker_box = DockerSandbox(args.image, network=proxy.network,
+                               env_values=proxy.worker_env(), readonly=(".git",))
     types = sorted({t.spec.type for t in store.list() if t.state not in TERMINAL})
     workers = [
         ClaudeCodeWorker(f"{ty}-{i}", ty, worker_box, model=args.model,

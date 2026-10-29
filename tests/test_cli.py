@@ -44,6 +44,8 @@ def test_run_refuses_without_auth_before_spending(tmp_path, monkeypatch, capsys)
 
 
 def test_run_refuses_checked_out_target(tmp_path, monkeypatch, capsys):
+    for k in cli.AUTH_ENV:
+        monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "dummy-not-used")
     monkeypatch.setattr(cli.shutil, "which", lambda name: "/bin/true")
     repo = make_repo(tmp_path, {"a.py": ""})
@@ -57,3 +59,13 @@ def test_add_goal_twice_is_a_clean_error(tmp_path, capsys):
     assert cli.main(args) == 0
     assert cli.main(args) == 1
     assert "GoalAlreadyLoaded" in capsys.readouterr().err
+
+
+def test_exactly_one_credential_must_be_set(monkeypatch):
+    for k in cli.AUTH_ENV:
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "x")
+    assert cli.select_credential() == "CLAUDE_CODE_OAUTH_TOKEN"
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "y")
+    with pytest.raises(cli.PreflightError, match="unset one"):
+        cli.select_credential()
