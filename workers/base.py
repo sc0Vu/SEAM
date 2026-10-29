@@ -33,6 +33,15 @@ class WorkerResult:
             raise ValueError("WorkerResult needs exactly one of diff or scope_request")
 
 
+class WorkerFailed(Exception):
+    """A worker run crashed or produced nothing. Carries what the run still cost, so
+    the lead can charge it; the orchestrator turns it into a bounded `fail`."""
+
+    def __init__(self, message: str, cost_usd: float = 0.0) -> None:
+        super().__init__(message)
+        self.cost_usd = cost_usd
+
+
 @runtime_checkable
 class Worker(Protocol):
     """A worker runtime. Implementations must edit only inside `worktree` and only

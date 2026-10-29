@@ -23,7 +23,7 @@ from reviewer.gate import ReviewGate
 from store import TaskStore
 from tests.fakes import ImportCheckSandbox
 from tests.gitfixture import git, make_repo
-from workers.base import WorkerResult
+from workers.base import WorkerFailed, WorkerResult
 
 LIB = "def greet():\n    return 'hi'\n"
 
@@ -229,3 +229,13 @@ def test_budget_cap_stops_new_runs(tmp_path):
     assert report.budget_exhausted and report.spent_usd == pytest.approx(0.6)
     assert len(w.runs) == 1
     assert store.get(b.id).state is State.OPEN  # never dispatched
+
+
+def test_failed_runs_still_charge_the_budget(tmp_path):
+    def boom(task, wt, n):
+        raise WorkerFailed("rate limited", cost_usd=0.2)
+
+    _, store, lead, orch = build(tmp_path, [ScriptedWorker("w1", {"x": boom})])
+    add(store, "x", ["x.py"])
+    orch.run()
+    assert lead.budget.spent_usd == pytest.approx(0.6)  # three bounded attempts

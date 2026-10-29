@@ -159,6 +159,7 @@ class Orchestrator:
         try:
             result: WorkerResult = fut.result()
         except Exception as e:  # a crashed run is a bounded attempt, not a crash of SEAM
+            self.lead.budget.charge(getattr(e, "cost_usd", 0.0))
             self.store.transition(task_id, Event.FAIL, review_notes=f"worker run failed: {e}")
             return
         self.lead.budget.charge(result.cost_usd)
