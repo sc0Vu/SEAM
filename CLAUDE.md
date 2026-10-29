@@ -90,11 +90,14 @@ cli.py           entrypoint: run | status | add-goal | inspect
 
 ## Commands
 ```
-python cli.py run --goal "<goal>" --repo <path>     # launch a team on a repo
+python cli.py run --repo <clone> --plan <plan.json>  # launch a team (v1: hand-written plan)
+python cli.py add-goal --plan <plan.json>            # load a plan without running
 python cli.py status                                 # task states, merge queue, escalations
 python cli.py inspect --task <id>                    # one task's branch, diff, review notes
-pytest && ruff check .                               # test + lint gate
+pytest && ruff check .                               # test + lint gate (use .venv/bin/)
 ```
+All take `--state-dir` (default `./.seam`). The real-agent v1 run is
+`examples/greeter/README.md`.
 
 ## Definition of done (every change)
 - Imports/builds; `pytest` and `ruff check .` pass.
