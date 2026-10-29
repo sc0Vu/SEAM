@@ -39,7 +39,8 @@ worker runtime as pluggable.**
   container, never the host. A diff is data until it passes review + merge; its tests
   are untrusted code. Behind one interface `Sandbox.run(cmd, workdir, timeout) ->
   RunResult` (`sandbox/base.py`); v1 = `DockerSandbox`, a fresh `docker run --rm` per
-  command with only the work dir mounted, `--network none`, `--cap-drop ALL`,
+  command with only the work dir mounted, `--pull never` (images are built or pulled
+  explicitly, never implicitly by name), `--network none`, `--cap-drop ALL`,
   `no-new-privileges`, and memory/pid caps. Image: `sandbox/Dockerfile`
   (`seam-sandbox`: python + pytest + Claude Code). Test runs get `--network none`.
   Worker runs need the model API, so they run on the `--internal` network

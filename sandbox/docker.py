@@ -27,7 +27,13 @@ PROXY_SCRIPT = Path(__file__).with_name("proxy.py")  # mounted read-only into th
 
 
 class DockerSandbox:
-    """`Sandbox` backed by `docker run --rm`. Each call is a fresh container."""
+    """`Sandbox` backed by `docker run --rm`. Each call is a fresh container.
+
+    Images are never pulled implicitly (`--pull never`): the image must already be
+    built or pulled. An implicit pull would download whatever the name resolves to at
+    that moment, and docker's pull progress would land in the command's output (the
+    task tests' output the reviewer reads, the merge-suite tail in escalation notes).
+    """
 
     def __init__(
         self,
@@ -59,7 +65,7 @@ class DockerSandbox:
         """The full `docker run` argv for `cmd` (exposed so the flags are testable)."""
         root = Path(workdir).resolve()
         argv = [
-            self.docker, "run", "--rm", "--name", name,
+            self.docker, "run", "--rm", "--pull", "never", "--name", name,
             "--network", self.network,
             "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges",
@@ -169,7 +175,7 @@ class CredentialProxyContainer:
     def argv(self, subnets: list[str]) -> list[str]:
         """The proxy's `docker run` argv (exposed so its flags are testable)."""
         argv = [
-            self.docker, "run", "-d", "--rm", "--name", self.name,
+            self.docker, "run", "-d", "--rm", "--pull", "never", "--name", self.name,
             "--network", self.network,
             "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
             "--memory", "256m", "--pids-limit", "64",

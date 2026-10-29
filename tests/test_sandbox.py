@@ -37,7 +37,8 @@ def test_run_result_ok_requires_zero_exit_and_no_timeout():
 def test_command_isolates_container(tmp_path):
     argv = DockerSandbox().command("pytest", tmp_path, "seam-x")
     joined = " ".join(argv)
-    for flag in ("--rm", "--network none", "--cap-drop ALL", "no-new-privileges"):
+    for flag in ("--rm", "--pull never", "--network none", "--cap-drop ALL",
+                 "no-new-privileges"):
         assert flag in joined
     # Only the work dir is mounted, and the command runs inside it.
     assert argv.count("-v") == 1
@@ -62,6 +63,14 @@ def test_worker_options_pass_env_by_name_and_overlay_readonly(tmp_path):
 IMAGE = "python:3.13-slim"  # any small image works for these behavior checks
 
 
+@pytest.fixture(scope="module")
+def image():
+    """Pull the test image explicitly, once: the sandbox itself never pulls."""
+    if subprocess.run(["docker", "image", "inspect", IMAGE], capture_output=True).returncode:
+        subprocess.run(["docker", "pull", "-q", IMAGE], check=True, capture_output=True)
+    return IMAGE
+
+
 @pytest.fixture
 def workdir():
     """A work dir under $HOME: Colima (and Docker Desktop by default) share only $HOME
@@ -74,21 +83,21 @@ def workdir():
 
 
 @needs_docker
-def test_exit_code_and_output_come_back(workdir):
+def test_exit_code_and_output_come_back(workdir, image):
     (workdir / "f.txt").write_text("hello")
-    res = DockerSandbox(IMAGE).run("cat f.txt; exit 3", workdir, timeout=120)
+    res = DockerSandbox(image).run("cat f.txt; exit 3", workdir, timeout=120)
     assert (res.exit_code, res.output.strip()) == (3, "hello")
 
 
 @needs_docker
-def test_no_network(workdir):
+def test_no_network(workdir, image):
     cmd = "python -c \"import socket; socket.create_connection(('1.1.1.1', 53), 3)\""
-    assert not DockerSandbox(IMAGE).run(cmd, workdir, timeout=120).ok
+    assert not DockerSandbox(image).run(cmd, workdir, timeout=120).ok
 
 
 @needs_docker
-def test_timeout_kills_container(workdir):
-    res = DockerSandbox(IMAGE).run("sleep 60", workdir, timeout=3)
+def test_timeout_kills_container(workdir, image):
+    res = DockerSandbox(image).run("sleep 60", workdir, timeout=3)
     assert res.timed_out and not res.ok
 
 
@@ -187,3 +196,10 @@ def test_real_proxy_reachable_only_from_the_internal_network(monkeypatch, workdi
         )
         out = box.run(probe, workdir, timeout=120).output
     assert out.split() == ["ok", "models", "403", "egress", "blocked"], out
+
+
+
+@needs_docker
+def test_a_missing_image_fails_instead_of_being_pulled(workdir):
+    res = DockerSandbox("seam-no-such-image:never").run("true", workdir, timeout=60)
+    assert not res.ok and "Pulling" not in res.output
