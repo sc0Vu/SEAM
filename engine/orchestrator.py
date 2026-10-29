@@ -164,7 +164,14 @@ class Orchestrator:
             return
         self.lead.budget.charge(result.cost_usd)
         if result.scope_request:
-            self.store.transition(task_id, Event.REQUEST_SCOPE)
+            # Notes go to the next worker run as rejection feedback, so they are set
+            # only when this request exhausts the attempts and a human must rule on it.
+            last = self.store.get(task_id).attempts + 1 >= self.store.max_attempts
+            notes = {"review_notes": "out of attempts while requesting scope expansion: "
+                     f"{list(result.scope_request)}"} if last else {}
+            asked = self.store.transition(task_id, Event.REQUEST_SCOPE, **notes)
+            if asked.state is State.NEEDS_HUMAN:
+                return
             ruled = self.lead.decide_scope(task_id, list(result.scope_request))
             if ruled.state is State.BLOCKED:
                 self._pending_scope[task_id] = list(result.scope_request)

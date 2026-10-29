@@ -132,7 +132,7 @@ merging ─clean─▶ merged                               (→ wake lead)
 merging ─textual or semantic conflict─▶ needs_human
 needs_human ─resolve(human/architect)─▶ queued_for_merge   (branch is fine as-is)
 needs_human ─rework(human)─▶ in_progress                 (attempts reset to 0)
-(attempts exceeded on review/merge) ─▶ needs_human
+(attempts exceeded on review/fail/scope request) ─▶ needs_human
 any non-terminal except merging ─cancel(lead)─▶ cancelled   (cascades to dependents)
 on restart: task in `merging` ─merge commit on main─▶ merged
                                ─otherwise────────────▶ queued_for_merge
@@ -147,7 +147,10 @@ because a human's judgment has replaced the loop that exhausted it; `resolve` is
 branch that needs no further edits (e.g. the human fixed main), `rework` for one that
 does (e.g. escalated after failing review).
 
-**Retry bound.** `attempts` bounds the review loop and failed worker runs (`fail`). Merge failures never loop:
+**Retry bound.** `attempts` bounds the review loop, failed worker runs (`fail`), and
+scope requests (`request_scope`: each grant buys another worker run, so a task that
+keeps widening its scope escalates rather than growing it until the budget runs out).
+All three share one per-task count. Merge failures never loop:
 the first textual or semantic conflict goes to `needs_human` (`merge_conflict` still
 increments `attempts`, as a record of how often the task bounced).
 

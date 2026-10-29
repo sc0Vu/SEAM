@@ -96,6 +96,9 @@ def next_state(
       attempt the same way, so a run that keeps failing escalates instead of being
       retried forever. A failed review returns the task to `submitted`, not to the
       worker: the branch was never judged, so it is not the worker's to fix.
+    - `request_scope` counts an attempt too: each grant costs another worker run, so
+      a task that keeps asking for more files escalates instead of growing its scope
+      (and spending budget) without bound.
     - `merge_conflict` also counts an attempt, for the record (it always escalates).
     - `rework` (a human sends an escalated task back to its branch) resets attempts:
       the human's judgment starts a fresh retry budget.
@@ -113,7 +116,7 @@ def next_state(
 
     if event is Event.REWORK:
         return target, 0
-    if event in (Event.REQUEST_CHANGES, Event.FAIL, Event.MERGE_CONFLICT):
+    if event in (Event.REQUEST_CHANGES, Event.FAIL, Event.REQUEST_SCOPE, Event.MERGE_CONFLICT):
         attempts += 1
         if attempts >= max_attempts:
             return State.NEEDS_HUMAN, attempts

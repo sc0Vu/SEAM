@@ -48,8 +48,8 @@ def test_merge_conflict_escalates_and_human_resolve_requeues():
 
 
 def test_scope_request_grant_and_deny():
-    state, _ = walk([Event.CLAIM, Event.START, Event.REQUEST_SCOPE])
-    assert state is State.SCOPE_REQUESTED
+    state, attempts = walk([Event.CLAIM, Event.START, Event.REQUEST_SCOPE])
+    assert (state, attempts) == (State.SCOPE_REQUESTED, 1)
     assert next_state(state, Event.GRANT_SCOPE, 0)[0] is State.IN_PROGRESS
     assert next_state(state, Event.DENY_SCOPE, 0)[0] is State.BLOCKED
 
@@ -101,3 +101,10 @@ def test_failed_review_rereviews_without_blaming_worker():
     state, _ = walk([Event.CLAIM, Event.START, Event.SUBMIT, Event.PICKUP])
     assert next_state(state, Event.FAIL, 0) == (State.SUBMITTED, 1)
     assert next_state(state, Event.FAIL, 2) == (State.NEEDS_HUMAN, 3)
+
+
+def test_repeated_scope_requests_escalate_at_the_bound():
+    ask = [Event.REQUEST_SCOPE, Event.GRANT_SCOPE]
+    state, attempts = walk([Event.CLAIM, Event.START, *ask, *ask])
+    assert (state, attempts) == (State.IN_PROGRESS, 2)
+    assert walk([Event.REQUEST_SCOPE], state, attempts) == (State.NEEDS_HUMAN, 3)

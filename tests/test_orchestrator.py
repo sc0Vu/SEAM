@@ -173,12 +173,14 @@ def test_scope_request_granted_then_work_continues(tmp_path):
             return ("extra.py",)
         return {"main_part.py": "", "extra.py": ""}
 
-    _, store, _, orch = build(tmp_path, [ScriptedWorker("w1", {"s": script})])
+    w = ScriptedWorker("w1", {"s": script})
+    _, store, _, orch = build(tmp_path, [w])
     t = add(store, "s", ["main_part.py"])
     orch.run()
     final = store.get(t.id)
     assert final.state is State.MERGED
     assert final.spec.file_scope == ("main_part.py", "extra.py")
+    assert [notes for _, notes in w.runs] == ["", ""]  # a grant is not a rejection
 
 
 def test_denied_scope_blocks_then_unblocks_after_holder_merges(tmp_path):
@@ -239,3 +241,18 @@ def test_failed_runs_still_charge_the_budget(tmp_path):
     add(store, "x", ["x.py"])
     orch.run()
     assert lead.budget.spent_usd == pytest.approx(0.6)  # three bounded attempts
+
+
+def test_worker_that_keeps_asking_for_scope_escalates(tmp_path):
+    def greedy(task, wt, n):
+        return (f"more{n}.py",)  # every grant just prompts another request
+
+    w = ScriptedWorker("w1", {"g": greedy})
+    _, store, _, orch = build(tmp_path, [w])
+    t = add(store, "g", ["g.py"])
+    orch.run()
+    final = store.get(t.id)
+    assert (final.state, final.attempts) == (State.NEEDS_HUMAN, 3)
+    assert final.spec.file_scope == ("g.py", "more1.py", "more2.py")  # third never granted
+    assert "more3.py" in final.review_notes
+    assert len(w.runs) == 3
