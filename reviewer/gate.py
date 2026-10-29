@@ -6,8 +6,9 @@ once the mechanical bar is met:
 2. a non-empty diff that stays inside file_scope (invariant 3);
 3. the task's own tests pass on its branch, run in the sandbox (invariants 5, 10);
 4. only then the reviewer runtime judges the diff against the spec, given the changed
-   files as they were at the merge base (bounded by `context_chars`), so it reviews
-   against the real code, not its memory of similar code.
+   files as they were at the merge base (whole by default; with `focused_context`,
+   large files are cut to what the diff touches and uses; bounded by
+   `context_chars`), so it reviews against the real code, not its memory of it.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from engine.git import GitRepo
 from engine.scope import path_in_scope
 from engine.task import Task
 from reviewer.base import Reviewer, ReviewRequest, Verdict
+from reviewer.context import split_diff, view
 from sandbox.base import Sandbox
 
 _OUTPUT_TAIL = 4000
@@ -42,7 +44,11 @@ class ReviewGate:
         test_timeout: float = 900,
         scratch: Path | None = None,
         context_chars: int = DEFAULT_CONTEXT_CHARS,
+        focused_context: bool = False,
     ) -> None:
+        """`focused_context`: ~3x cheaper reviews of large files, but on boltons-bench-2
+        it caught a confirmed bug 0/3 times vs 1/2 with whole files (doc §8), so it is
+        opt-in until measured on more cases."""
         self.repo = repo
         self.sandbox = sandbox
         self.reviewer = reviewer
@@ -50,21 +56,35 @@ class ReviewGate:
         self.test_timeout = test_timeout
         self.scratch = scratch
         self.context_chars = context_chars
+        self.focused_context = focused_context
 
-    def originals(self, branch: str, changed: list[str]) -> tuple[dict[str, str], list[str]]:
-        """The changed files' text at the merge base, smallest first within the budget;
-        returns (files, omitted). New files have no original: the diff is all of them."""
+    def originals(self, branch: str, changed: list[str],
+                  diff: str = "") -> tuple[dict[str, str], list[str]]:
+        """The changed files' text at the merge base, as `reviewer.context.view` shows
+        it (whole if small, else focused on what `diff` touches and uses), smallest
+        first within the budget; returns (files, omitted). New files have no
+        original: the diff is all of them."""
         base = self.repo.merge_base(self.target, branch)
-        blobs = [(p, self.repo.read_file(base, p)) for p in changed]
+        changes = split_diff(diff)
+        views = []
+        for path in changed:
+            blob = self.repo.read_file(base, path)
+            if blob is None:
+                continue
+            if b"\0" in blob:
+                views.append((path, None))
+                continue
+            text = blob.decode("utf-8", "replace")
+            views.append((path, view(text, changes.get(path), self.focused_context)))
         files: dict[str, str] = {}
         omitted: list[str] = []
         used = 0
-        for path, blob in sorted((b for b in blobs if b[1] is not None), key=lambda b: len(b[1])):
-            if b"\0" in blob or used + len(blob) > self.context_chars:
+        for path, text in sorted(views, key=lambda v: len(v[1] or "")):
+            if text is None or used + len(text) > self.context_chars:
                 omitted.append(path)
                 continue
-            files[path] = blob.decode("utf-8", "replace")
-            used += len(blob)
+            files[path] = text
+            used += len(text)
         return files, sorted(omitted)
 
     def review(self, task: Task) -> Verdict:
@@ -93,7 +113,7 @@ class ReviewGate:
                 return Verdict(False, f"task tests {why} on the branch:\n{test_output}")
 
         diff = self.repo.diff(self.target, branch)
-        files, omitted = self.originals(branch, changed)
+        files, omitted = self.originals(branch, changed, diff)
         return self.reviewer.review(ReviewRequest(
             task=task, diff=diff, test_output=test_output,
             files=files, files_omitted=tuple(omitted)))

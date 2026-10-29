@@ -110,7 +110,11 @@ own `test_cmd` green on the branch in the sandbox; only then the `Reviewer` runt
 judges the git diff against the spec, given the changed files as they were at the merge
 base (smallest first, up to `context_chars`, default 200k characters; larger or binary
 files are listed as omitted), so it checks the diff against the real surrounding code
-rather than its memory of similar code. v1 reviewer runtime (`reviewer/claude_code.py`): `claude -p` with
+rather than its memory of similar code. Files are sent whole by default; `run
+--review-context focused` instead sends files over 12k characters as a focused view
+(`reviewer/context.py`: an `ast` outline of every definition and assignment, plus the
+full source of what the diff touches, uses, or aliases), ~3x cheaper but less tested
+(§8). v1 reviewer runtime (`reviewer/claude_code.py`): `claude -p` with
 **all tools disabled** and a JSON verdict schema, the diff on stdin, from an empty temp
 dir (no project config). With no tools it can only read, so it runs outside the
 sandbox; the diff is labelled untrusted in the prompt, and a manipulated approve
@@ -422,8 +426,9 @@ see was declared.
 | master | 786 passed |
 | cost | $1.35: workers $0.37 (7 runs), reviewer **$0.98** (7 reviews) |
 
-The two rejections were real: `setlist` matched keys by equality only (fixed to
-identity-then-equality, as `dict` does) and mishandled the absent-key path;
+The two rejections were real (both confirmed later by running the buggy versions in
+the sandbox): `setlist` matched keys by equality only, so a `nan` key was duplicated
+instead of replaced (fixed to identity-then-equality, as `dict` does);
 `without_query_params` assigned `ret.query_params`, a `cachedproperty`, leaving the
 URL's `_query` text stale — a defect visible only from the original `urlutils.py`,
 which the reviewer now receives. (Those notes were reconstructed from the diffs:
@@ -435,6 +440,25 @@ worked on real code, and no task escalated. The reviewer is now ~73% of cost:
 `urlutils.py` alone is ~55k characters, so each review read ~35k tokens on Opus.
 Escalation on real code is still unobserved; it needs a goal whose decomposition is
 wrong somewhere, which a careful hand-written plan rarely is.
+
+**Focused reviewer context, measured (2026-10-30).** Re-reviews of bench-2's two
+buggy first versions, both confirmed by running them in the sandbox: buggy
+`without_query_params` returned a URL whose `to_text()` was `?b=2` while `qp` and
+`query_params` still held `a=1, a=3` (worker tests passed); buggy `setlist` duplicated
+a `nan` key instead of replacing it. Per review, on Opus 5.5:
+
+| context | `without_query_params` bug caught | `setlist` bug caught | cost / review |
+|---|---|---|---|
+| whole files (default) | 1 of 2 | 1 of 2 | $0.13–0.18 |
+| focused view | 0 of 3 | 0 of 1 | $0.04–0.06 |
+
+(Whole-file counts include the original run's rejections.) Too few samples to rank
+the two, but the direction is against the focused view, so it stays opt-in. The
+larger finding is that **an LLM review is a probabilistic gate**: a significant,
+test-passing bug got through whole-file review half the time. The merge-time suite
+cannot catch what the tests don't assert; making review reliable on such bugs (e.g.
+several independent reviews, any rejection wins, or a reviewer that proposes a
+failing test) is open work.
 
 ## 9. Risks
 - **Semantic merge is unsolved in general** — escalation is a feature; the lever is

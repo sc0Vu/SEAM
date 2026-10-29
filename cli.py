@@ -138,7 +138,8 @@ def _run_team(args, store, repo, tests, scratch, proxy) -> None:
     lead = Lead(store, args.goal or "goal", Budget(args.budget_usd))
     orch = Orchestrator(
         store, lead, repo, workers,
-        gate=ReviewGate(repo, tests, reviewer, target=args.target, scratch=scratch),
+        gate=ReviewGate(repo, tests, reviewer, target=args.target, scratch=scratch,
+                        focused_context=args.review_context == "focused"),
         merger=MergeEngine(store, repo, tests, suite_cmd=args.suite_cmd,
                            target=args.target, scratch=scratch),
         worktree_root=args.state_dir / "worktrees",
@@ -226,6 +227,9 @@ def parser() -> argparse.ArgumentParser:
     r.add_argument("--image", default=DEFAULT_IMAGE)
     r.add_argument("--model")
     r.add_argument("--reviewer-model")
+    r.add_argument("--review-context", choices=["whole", "focused"], default="whole",
+                   help="original files for the reviewer: whole, or focused on what the "
+                        "diff touches (cheaper; less tested, see doc §8)")
     r.set_defaults(func=cmd_run)
 
     s = sub.add_parser("status", help="task states, merge queue, escalations")

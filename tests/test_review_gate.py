@@ -105,3 +105,18 @@ def test_original_context_is_bounded_smallest_first_and_skips_binaries(tmp_path)
     (req,) = reviewer.requests
     assert req.files == {"small.py": "s = 1\n"}
     assert req.files_omitted == ("big.py", "blob.bin")
+
+
+def test_large_files_are_whole_by_default_and_focused_on_request(tmp_path):
+    from reviewer import context
+    big = "\n".join(f"def f{i}(x):\n    return x + {i}\n" for i in range(2000))
+    assert len(big) > context.WHOLE_FILE_CHARS
+    repo = make_repo(tmp_path, {"lib.py": "def greet(): pass\n", "big.py": big})
+    branch_with(repo, "t", {"big.py": big.replace("x + 7\n", "x + 70\n", 1)})
+    for focused, expect_whole in ((False, True), (True, False)):
+        reviewer = RecordingReviewer()
+        ReviewGate(GitRepo(repo), ImportCheckSandbox(), reviewer,
+                   focused_context=focused).review(task("t", ["big.py"]))
+        text = reviewer.requests[0].files["big.py"]
+        assert (text == big) is expect_whole
+        assert "return x + 7" in text  # the touched definition is there either way
