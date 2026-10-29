@@ -440,8 +440,9 @@ worker container ──(internal net, no egress)──▶ seam-proxy ──(brid
   started by the CLI before any worker and removed after (`docker rm -f`, also on
   Ctrl-C). It is SEAM's own code (stdlib Python, in the `seam-sandbox` image), not
   agent-written, and it is the only process that holds the credential.
-- Forwarding rule: only `POST /v1/messages` (any query string) is forwarded to
-  `https://api.anthropic.com`; everything else gets 403. The proxy replaces
+- Forwarding rule: only `POST /v1/messages` and `POST /v1/messages/count_tokens` (any
+  query string) are forwarded to `https://api.anthropic.com`; everything else gets
+  403. (`count_tokens` was added after a real run showed Claude Code calling it.) The proxy replaces
   `Authorization: Bearer …` (OAuth) or `x-api-key` (API key) with the real value,
   passes all other headers through, and streams the response unbuffered (SSE).
 - Workers get a dummy credential *of the same kind* as the real one, so Claude Code

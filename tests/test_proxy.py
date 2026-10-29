@@ -118,6 +118,13 @@ def test_everything_but_post_messages_is_refused_and_never_forwarded(upstream, m
     proxy.shutdown()
 
 
+def test_token_counting_is_forwarded(upstream):
+    proxy = start_proxy(upstream)
+    assert call(proxy, "POST", "/v1/messages/count_tokens?beta=true", body=b"{}").status == 200
+    assert upstream.requests[0][1] == "/v1/messages/count_tokens?beta=true"
+    proxy.shutdown()
+
+
 def test_health_is_answered_locally(upstream):
     proxy = start_proxy(upstream)
     resp = call(proxy, "GET", HEALTH_PATH)

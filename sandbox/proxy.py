@@ -2,8 +2,8 @@
 
 Worker containers run on an internal Docker network with a placeholder credential
 and `ANTHROPIC_BASE_URL` pointing here (doc/architecture.md §10). This proxy forwards
-`POST /v1/messages` to the real API with the placeholder auth header replaced by the
-real one, refuses every other request, and streams responses unbuffered. So a
+`POST /v1/messages` (and its `count_tokens`) to the real API with the placeholder auth
+header replaced by the real one, refuses every other request, and streams responses unbuffered. So a
 prompt-injected worker can neither read the credential nor reach any other host
 (invariants 10 and 13).
 
@@ -24,7 +24,9 @@ from urllib.parse import urlsplit
 
 DEFAULT_UPSTREAM = "https://api.anthropic.com"
 HEALTH_PATH = "/seam-proxy/health"  # answered locally; never forwarded
-ALLOWED = {("POST", "/v1/messages")}
+# Generation, and token counting (Claude Code sizes its context with it; it generates
+# nothing and is not billed). Everything else is refused.
+ALLOWED = {("POST", "/v1/messages"), ("POST", "/v1/messages/count_tokens")}
 
 _HOP_BY_HOP = {
     "connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te",
