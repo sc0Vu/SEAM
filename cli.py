@@ -1,4 +1,4 @@
-"""SEAM entrypoint: add-goal | run | status | inspect.
+"""SEAM entrypoint: plan | add-goal | run | status | inspect.
 
 The only place that prints or exits; everything below raises typed exceptions.
 """
@@ -10,6 +10,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from collections import Counter
 from pathlib import Path
 
@@ -18,8 +19,10 @@ from engine.errors import SeamError
 from engine.git import GitRepo
 from engine.merge import MergeEngine
 from engine.orchestrator import Orchestrator
+from engine.scope import scopes_overlap
 from engine.states import TERMINAL, State
 from engine.usage import format_usage, totals_by_role
+from planners.claude_code import ClaudeCodePlanner, plan_to_json
 from reviewer.claude_code import ClaudeCodeReviewer
 from reviewer.gate import DEFAULT_PROBE_CMD, ReviewGate
 from sandbox.docker import DEFAULT_IMAGE, CredentialProxyContainer, DockerSandbox
@@ -83,6 +86,12 @@ def preflight(args: argparse.Namespace, repo: GitRepo, sandbox: DockerSandbox) -
             f"{args.target!r} is checked out in {repo.checked_out_in(args.target)}; SEAM "
             "moves that branch, so run it on a dedicated clone "
             f"(git clone {args.repo} <dir>; git -C <dir> checkout --detach)")
+    preflight_sandbox(args, sandbox)
+    return credential
+
+
+def preflight_sandbox(args: argparse.Namespace, sandbox: DockerSandbox) -> None:
+    """Docker is up, the image exists, and the state dir is visible in containers."""
     if subprocess.run(["docker", "info"], capture_output=True).returncode != 0:
         raise PreflightError("docker daemon not reachable (colima start?)")
     if subprocess.run(["docker", "image", "inspect", args.image],
@@ -94,7 +103,6 @@ def preflight(args: argparse.Namespace, repo: GitRepo, sandbox: DockerSandbox) -
     if not sandbox.run("test -f .seam-probe", probe, timeout=120).ok:
         raise PreflightError(f"{args.state_dir} is not visible inside containers "
                              "(colima shares only $HOME by default: use a state dir under it)")
-    return credential
 
 
 def check_proxy(proxy: CredentialProxyContainer, image: str, probe_dir: Path) -> None:
@@ -105,6 +113,40 @@ def check_proxy(proxy: CredentialProxyContainer, image: str, probe_dir: Path) ->
         raise PreflightError(f"credential proxy not reachable from {proxy.network}: {out[-300:]}")
     if "egress blocked" not in out:
         raise PreflightError(f"{proxy.network} is not isolated: workers could reach the internet")
+
+
+def cmd_plan(args: argparse.Namespace) -> None:
+    """Draft a plan for a goal with the LLM planner (doc §12) and write it for review.
+    It only reads: the target is exported (no `.git`) and nothing in the repo moves."""
+    repo = GitRepo(args.repo)
+    out = Path(args.out)
+    if out.exists():
+        raise PreflightError(f"{out} exists; pick another --out")
+    credential = select_credential()
+    preflight_sandbox(args, DockerSandbox(args.image))
+    scratch = args.state_dir / "tmp"
+    with tempfile.TemporaryDirectory(prefix="seam-plan-", dir=scratch) as d:
+        repo.export(repo.rev_parse(args.target), Path(d))
+        with CredentialProxyContainer(credential, args.image) as proxy:
+            check_proxy(proxy, args.image, scratch)
+            box = DockerSandbox(args.image, network=proxy.network,
+                                env_values=proxy.worker_env())
+            planner = ClaudeCodePlanner(box, model=args.model, max_budget_usd=args.budget_usd)
+            print(f"planning on {args.repo}@{args.target} (cap ${args.budget_usd:.2f})")
+            draft = planner.plan(args.goal, Path(d))
+    out.write_text(plan_to_json(draft, args.goal))
+    by_key = {t["key"]: t for t in draft.plan.tasks}
+    for t in draft.plan.tasks:
+        deps = f"  after {t.get('blocked_by')}" if t.get("blocked_by") else ""
+        print(f"  {t['key']:<24} scope={t['file_scope']}{deps}")
+    overlaps = [(a, b) for i, a in enumerate(by_key) for b in list(by_key)[i + 1:]
+                if scopes_overlap(by_key[a]["file_scope"], by_key[b]["file_scope"])]
+    if overlaps:
+        print(f"  overlapping scopes (will run one at a time): {overlaps}")
+    print(f"\nplanner notes: {draft.notes}")
+    usage = format_usage(draft.usage) if draft.usage else "n/a"
+    print(f"\nwrote {out}  (${draft.cost_usd:.2f}; {usage})")
+    print(f"review it, then: cli.py run --repo {args.repo} --plan {out} ...")
 
 
 def cmd_run(args: argparse.Namespace) -> None:
@@ -209,6 +251,17 @@ def parser() -> argparse.ArgumentParser:
     def common(sp):
         sp.add_argument("--state-dir", type=lambda s: Path(s).expanduser().resolve(),
                         default=Path(".seam").resolve(), help="task store + worktrees")
+
+    pl = sub.add_parser("plan", help="draft a plan for a goal with the LLM planner")
+    common(pl)
+    pl.add_argument("--repo", required=True, type=lambda s: Path(s).expanduser().resolve())
+    pl.add_argument("--goal", required=True, help="the goal, in prose")
+    pl.add_argument("--out", required=True, help="where to write the plan JSON")
+    pl.add_argument("--target", default="main")
+    pl.add_argument("--image", default=DEFAULT_IMAGE)
+    pl.add_argument("--model")
+    pl.add_argument("--budget-usd", type=float, default=1.0, help="ceiling for planning")
+    pl.set_defaults(func=cmd_plan)
 
     g = sub.add_parser("add-goal", help="load a plan's tasks into the store")
     common(g)

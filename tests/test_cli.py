@@ -69,3 +69,12 @@ def test_exactly_one_credential_must_be_set(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "y")
     with pytest.raises(cli.PreflightError, match="unset one"):
         cli.select_credential()
+
+
+def test_plan_refuses_an_existing_out_file_before_anything_else(tmp_path, capsys):
+    repo = make_repo(tmp_path, {"a.py": ""})
+    out = tmp_path / "plan.json"
+    out.write_text("{}")
+    assert cli.main(["plan", "--repo", str(repo), "--goal", "g", "--out", str(out),
+                     "--state-dir", str(tmp_path / "s")]) == 1
+    assert "exists" in capsys.readouterr().err

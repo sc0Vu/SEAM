@@ -50,9 +50,19 @@ def load_plan(path: str | Path) -> Plan:
         data = json.loads(Path(path).read_text())
     except (OSError, json.JSONDecodeError) as e:
         raise PlanError(f"cannot read plan {path}: {e}") from e
+    return plan_from_dict(data)
+
+
+def plan_from_dict(data: object) -> Plan:
+    """Validate a plan however it was produced (a file, or an LLM planner): the same
+    checks apply, so a generated plan is held to the hand-written plan's rules."""
+    if not isinstance(data, dict):
+        raise PlanError("a plan must be a JSON object")
     goal, tasks = data.get("goal"), data.get("tasks")
     if not goal or not isinstance(tasks, list) or not tasks:
         raise PlanError("plan needs a 'goal' and a non-empty 'tasks' list")
+    if not all(isinstance(t, dict) for t in tasks):
+        raise PlanError("every task must be a JSON object")
     keys = [t.get("key") for t in tasks]
     if None in keys or len(set(keys)) != len(keys):
         raise PlanError("every task needs a unique 'key'")

@@ -24,7 +24,10 @@ on two cases on a real small repo:
 2. **Escalation path** — two tasks touching a shared interface must ESCALATE
    (merge-time full suite catches the semantic conflict) — never silently merge a break.
 Success = case 1 fully autonomous, case 2 correctly escalated (caught, not merged
-broken). Do not add worker types, Postgres, a UI, or the architect role until both pass.
+broken). **Both pass with real agents (doc §8).** Next: the AI lead — an LLM planner
+behind the `Planner` interface (doc §12), measured on boltons before it plans
+unattended. Still out of scope until the lead is measured: new worker types,
+Postgres, a UI.
 
 ## Non-negotiable invariants (stop and flag if a task would violate one)
 1. **Worktree isolation.** Every in-flight task runs in its own git worktree +
@@ -78,6 +81,7 @@ broken). Do not add worker types, Postgres, a UI, or the architect role until bo
 ## Layout
 ```
 coordinator/     the lead: goal → typed, file-scoped, dependency-ordered tasks; contract owner
+planners/        planner runtime adapters (claude_code) behind coordinator.planner.Planner
 engine/          the task state machine + the SERIALIZED merge+review engine (the novel core)
 workers/         the pluggable Worker interface + runtime adapters (claude_code, agentscope)
 reviewer/        the independent review gate
@@ -91,7 +95,8 @@ cli.py           entrypoint: run | status | add-goal | inspect
 
 ## Commands
 ```
-python cli.py run --repo <clone> --plan <plan.json>  # launch a team (v1: hand-written plan)
+python cli.py plan --repo <clone> --goal "<prose>" --out <plan.json>  # LLM drafts a plan
+python cli.py run --repo <clone> --plan <plan.json>  # launch a team on a reviewed plan
 python cli.py add-goal --plan <plan.json>            # load a plan without running
 python cli.py status                                 # task states, merge queue, escalations
 python cli.py inspect --task <id>                    # one task's branch, diff, review notes

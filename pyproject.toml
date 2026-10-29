@@ -10,7 +10,7 @@ requires-python = ">=3.11"
 dependencies = []
 
 [tool.setuptools]
-packages = ["contract", "coordinator", "engine", "reviewer", "sandbox", "store", "workers"]
+packages = ["contract", "coordinator", "engine", "planners", "reviewer", "sandbox", "store", "workers"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.5"]

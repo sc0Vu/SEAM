@@ -614,7 +614,7 @@ original-code behavior it asserts.
 
 ---
 
-## 12. Proposed (not built): the AI lead (LLM planner)
+## 12. The AI lead (LLM planner) — built, not yet measured
 
 **Constraint served: invariant 7, and an honest benchmark.** The v1 lead executes a
 hand-written plan, so every escalation rate so far measures its author's planning.
@@ -643,6 +643,15 @@ both v1 cases passed; they have, §8.)
   contract in `spec_ref` for any shared-interface change; an indivisible feature is one
   task; report scopes that overlap (they will serialize).
 - *Cost* is charged to the goal's budget.
+
+**Built:** `coordinator/planner.py` (`Planner`, `PlanDraft`, `PlannerFailed`),
+`coordinator/lead.py:plan_from_dict` (the shared validation), `planners/claude_code.py`
+(`ClaudeCodePlanner`: tools Read/Glob/Grep, `PLAN_SCHEMA` structured output), and
+`cli.py plan`, which exports the target to the state dir, starts the credential proxy,
+runs the planner, and writes the plan JSON with the goal text and the planner's notes
+(`goal_text`, `planner_notes`, ignored by `load_plan`). The `plan` command has its own
+`--budget-usd` cap; budgets are per invocation (§8), so planning cost is reported, not
+carried into `run`.
 
 **Measurement.** Give the planner the bench-1 and bench-2 goals in prose; compare its
 plans with the hand-written ones (tasks, scopes, deps); then run its plans unedited
