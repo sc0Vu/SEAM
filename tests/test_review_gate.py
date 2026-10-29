@@ -6,7 +6,7 @@ from engine.task import Task, TaskSpec
 from reviewer.base import ReviewRequest, Verdict
 from reviewer.gate import ReviewerNotIndependent, ReviewGate
 from tests.fakes import ImportCheckSandbox
-from tests.gitfixture import branch_with, make_repo
+from tests.gitfixture import branch_with, git, make_repo
 
 LGTM = Verdict(True, "lgtm")
 
@@ -81,3 +81,27 @@ def test_reviewer_must_not_be_author(setup):
     branch_with(repo, "t", {"feat/x.py": ""})
     with pytest.raises(ReviewerNotIndependent):
         gate.review(task("t", ["feat/**"], owner="rev"))
+
+
+def test_reviewer_gets_changed_files_as_they_were_at_the_fork_point(setup):
+    repo, reviewer, _, gate = setup
+    branch_with(repo, "t", {"lib.py": "def greet():\n    return 1\n", "feat/new.py": ""})
+    # main moves on after the fork; the original must be what the diff applies to.
+    git(repo, "update-ref", "refs/heads/main",
+        branch_with(repo, "side", {"lib.py": "def greet():\n    return 2\n"}))
+    gate.review(task("t", ["lib.py", "feat/**"]))
+    (req,) = reviewer.requests
+    assert req.files == {"lib.py": "def greet():\n    pass\n"}  # new files have no original
+    assert req.files_omitted == ()
+
+
+def test_original_context_is_bounded_smallest_first_and_skips_binaries(tmp_path):
+    repo = make_repo(tmp_path, {"lib.py": "def greet(): pass\n", "big.py": "x" * 500,
+                                "small.py": "s = 1\n", "blob.bin": "a\0b"})
+    reviewer = RecordingReviewer()
+    gate = ReviewGate(GitRepo(repo), ImportCheckSandbox(), reviewer, context_chars=100)
+    branch_with(repo, "t", {"big.py": "y", "small.py": "s = 2\n", "blob.bin": "c"})
+    gate.review(task("t", ["*.py", "*.bin"]))
+    (req,) = reviewer.requests
+    assert req.files == {"small.py": "s = 1\n"}
+    assert req.files_omitted == ("big.py", "blob.bin")

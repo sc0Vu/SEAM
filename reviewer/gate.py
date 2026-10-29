@@ -5,7 +5,9 @@ once the mechanical bar is met:
 1. independence — the reviewer is not the author (invariant 6);
 2. a non-empty diff that stays inside file_scope (invariant 3);
 3. the task's own tests pass on its branch, run in the sandbox (invariants 5, 10);
-4. only then the reviewer runtime judges the diff against the spec.
+4. only then the reviewer runtime judges the diff against the spec, given the changed
+   files as they were at the merge base (bounded by `context_chars`), so it reviews
+   against the real code, not its memory of similar code.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from reviewer.base import Reviewer, ReviewRequest, Verdict
 from sandbox.base import Sandbox
 
 _OUTPUT_TAIL = 4000
+DEFAULT_CONTEXT_CHARS = 200_000  # original-file context per review, ~50k tokens
 
 
 class ReviewerNotIndependent(SeamError):
@@ -38,6 +41,7 @@ class ReviewGate:
         target: str = "main",
         test_timeout: float = 900,
         scratch: Path | None = None,
+        context_chars: int = DEFAULT_CONTEXT_CHARS,
     ) -> None:
         self.repo = repo
         self.sandbox = sandbox
@@ -45,6 +49,23 @@ class ReviewGate:
         self.target = target
         self.test_timeout = test_timeout
         self.scratch = scratch
+        self.context_chars = context_chars
+
+    def originals(self, branch: str, changed: list[str]) -> tuple[dict[str, str], list[str]]:
+        """The changed files' text at the merge base, smallest first within the budget;
+        returns (files, omitted). New files have no original: the diff is all of them."""
+        base = self.repo.merge_base(self.target, branch)
+        blobs = [(p, self.repo.read_file(base, p)) for p in changed]
+        files: dict[str, str] = {}
+        omitted: list[str] = []
+        used = 0
+        for path, blob in sorted((b for b in blobs if b[1] is not None), key=lambda b: len(b[1])):
+            if b"\0" in blob or used + len(blob) > self.context_chars:
+                omitted.append(path)
+                continue
+            files[path] = blob.decode("utf-8", "replace")
+            used += len(blob)
+        return files, sorted(omitted)
 
     def review(self, task: Task) -> Verdict:
         if self.reviewer.id == task.owner:
@@ -72,4 +93,7 @@ class ReviewGate:
                 return Verdict(False, f"task tests {why} on the branch:\n{test_output}")
 
         diff = self.repo.diff(self.target, branch)
-        return self.reviewer.review(ReviewRequest(task=task, diff=diff, test_output=test_output))
+        files, omitted = self.originals(branch, changed)
+        return self.reviewer.review(ReviewRequest(
+            task=task, diff=diff, test_output=test_output,
+            files=files, files_omitted=tuple(omitted)))

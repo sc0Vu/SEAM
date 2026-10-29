@@ -6,7 +6,7 @@ own account of what it did (invariant 6) — and returns a verdict.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
 from engine.task import Task
@@ -15,11 +15,16 @@ from engine.usage import Usage
 
 @dataclass(frozen=True)
 class ReviewRequest:
-    """What the reviewer judges: the task's spec, its diff, its own tests' output."""
+    """What the reviewer judges: the task's spec, its diff, its own tests' output, and
+    the changed files as they were before the change (`files`, path -> text), so it
+    judges the diff against the real surrounding code rather than guessing.
+    `files_omitted` lists changed files left out (too large, or binary)."""
 
     task: Task
     diff: str
     test_output: str
+    files: dict[str, str] = field(default_factory=dict)
+    files_omitted: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

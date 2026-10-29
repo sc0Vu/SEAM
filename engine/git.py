@@ -110,6 +110,16 @@ class GitRepo:
         """Everything `branch` changed since it forked from `base` (`base...branch`)."""
         return self._git("diff", "--no-color", "--no-ext-diff", f"{base}...{branch}")
 
+    def merge_base(self, a: str, b: str) -> str:
+        return self._git("merge-base", a, b)
+
+    def read_file(self, commit: str, path: str) -> bytes | None:
+        """`path`'s content at `commit`, or None if it does not exist there."""
+        proc = self._run("cat-file", "-e", f"{commit}:{path}")
+        if proc.returncode != 0:
+            return None
+        return self._run("cat-file", "blob", f"{commit}:{path}").stdout
+
     def changed_files(self, base: str, branch: str) -> list[str]:
         out = self._git("diff", "--name-only", "--no-renames", f"{base}...{branch}")
         return [ln for ln in out.splitlines() if ln]
