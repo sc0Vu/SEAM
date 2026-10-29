@@ -94,7 +94,8 @@ needs_human ─resolve(human/architect)─▶ queued_for_merge   (branch is fine
 needs_human ─rework(human)─▶ in_progress                 (attempts reset to 0)
 (attempts exceeded on review/merge) ─▶ needs_human
 any non-terminal except merging ─cancel(lead)─▶ cancelled   (cascades to dependents)
-on restart: any task in `merging` ─rollback+requeue─▶ queued_for_merge
+on restart: task in `merging` ─merge commit on main─▶ merged
+                               ─otherwise────────────▶ queued_for_merge
 ```
 
 Implemented as a pure transition table in `engine/states.py` (`next_state`); the store
@@ -126,7 +127,9 @@ description, spec_ref (frozen contract section implemented),
 file_scope[]  (module/dir-level globs this task may touch — see §5 on granularity),
 blocked_by[]  (task ids that must be merged first), priority,
 state, owner, branch, worktree_path, test_cmd,
-attempts (review/merge bounces so far), review_notes, diff
+attempts (review/merge bounces so far), review_notes, diff,
+base_sha, merge_sha  (main before the merge; the merge commit — recorded before main
+                      moves, cleared on each new `take`; see §6 crash-safety)
 ```
 
 ---
@@ -195,9 +198,16 @@ correctness/security red flags, (4) stayed in file_scope. → approve | changes_
    distinct from the reviewer's branch-level run).
 4. green → commit merge, mark merged, wake lead; red → `needs_human`.
 5. release slot; next queued task rebases onto the new main.
-Crash-safety: the branch is merged into a throwaway ref / the merge is only committed
-to main as the last step, so a crash mid-step leaves main untouched and the task is
-rolled back to `queued_for_merge` on restart.
+Crash-safety: the merge commit is built off main on a throwaway ref and the suite runs
+on it there; main is never touched until both gates have passed. Publishing is then:
+(a) record `base_sha`/`merge_sha` on the task, (b) compare-and-swap main from
+`base_sha` to `merge_sha` (`git update-ref`), (c) mark `merged`. A crash can leave the
+task `merging` at any point; on restart (`TaskStore.recover_merging`):
+- `merge_sha` is on main → the crash fell between (b) and (c). Main only moved after
+  the full suite passed, so both gates were met: finish it as `merged`. Rolling it
+  back would discard a verified merge and move main backwards.
+- otherwise → main was never moved: requeue to `queued_for_merge`.
+Either way a partial merge never reaches main.
 
 **Semantic-conflict escalation** (the honest boundary — not solved, by design): two
 branches pass their own tests, no textual conflict, but break merged. Detected by step

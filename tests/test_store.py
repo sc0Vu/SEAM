@@ -1,6 +1,6 @@
 import pytest
 
-from engine.errors import IllegalTransition, MergeSlotBusy
+from engine.errors import IllegalTransition, MergeSlotBusy, StaleState
 from engine.states import Event, State
 from engine.task import TaskSpec
 from store import TaskStore
@@ -127,20 +127,55 @@ def test_grant_scope_checks_disjointness(store):
     assert (denied.state, denied.spec.file_scope) == (State.BLOCKED, ("a/**", "c/x.py"))
 
 
-def test_recover_merging_requeues(tmp_path):
+def crash_mid_merge(tmp_path, record):
+    """Take a task into `merging`, optionally record its merge commit, then 'crash'."""
     db = tmp_path / "seam.sqlite"
     s = TaskStore(db)
     t = s.create(spec(["a/**"]))
     s.claim("w", "backend")
     to_queued(s, t.id)
     s.transition(t.id, Event.TAKE)
-    s.close()  # simulated crash mid-merge
+    if record:
+        s.record_merge_commit(t.id, base_sha="base1", merge_sha="merge1")
+    s.close()
+    return TaskStore(db), t.id
 
-    restarted = TaskStore(db)
-    recovered = restarted.recover_merging()
-    assert [r.id for r in recovered] == [t.id]
-    assert restarted.get(t.id).state is State.QUEUED_FOR_MERGE
-    restarted.close()
+
+def test_recover_requeues_when_merge_never_recorded(tmp_path):
+    store, tid = crash_mid_merge(tmp_path, record=False)
+    recovered = store.recover_merging(landed=lambda sha: True)
+    assert [(r.id, r.state) for r in recovered] == [(tid, State.QUEUED_FOR_MERGE)]
+    store.close()
+
+
+def test_recover_requeues_when_recorded_merge_not_on_main(tmp_path):
+    store, tid = crash_mid_merge(tmp_path, record=True)
+    asked = []
+    recovered = store.recover_merging(landed=lambda sha: asked.append(sha) or False)
+    assert asked == ["merge1"]
+    assert recovered[0].state is State.QUEUED_FOR_MERGE
+    store.close()
+
+
+def test_recover_finishes_merge_that_already_landed(tmp_path):
+    store, tid = crash_mid_merge(tmp_path, record=True)
+    recovered = store.recover_merging(landed=lambda sha: sha == "merge1")
+    assert [(r.id, r.state) for r in recovered] == [(tid, State.MERGED)]
+    store.close()
+
+
+def test_retake_forgets_previous_merge_commit(tmp_path):
+    store, tid = crash_mid_merge(tmp_path, record=True)
+    store.recover_merging(landed=lambda sha: False)
+    retaken = store.transition(tid, Event.TAKE)
+    assert (retaken.base_sha, retaken.merge_sha) == (None, None)
+    store.close()
+
+
+def test_merge_commit_only_recorded_while_merging(store):
+    t = store.create(spec(["a/**"]))
+    with pytest.raises(StaleState):
+        store.record_merge_commit(t.id, "b", "m")
 
 
 def test_cancel_cascades_to_dependents_only(store):

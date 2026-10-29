@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -38,7 +38,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     test_cmd      TEXT    NOT NULL DEFAULT '',
     attempts      INTEGER NOT NULL DEFAULT 0,
     review_notes  TEXT    NOT NULL DEFAULT '',
-    diff          TEXT    NOT NULL DEFAULT ''
+    diff          TEXT    NOT NULL DEFAULT '',
+    base_sha      TEXT,                          -- main before this merge
+    merge_sha     TEXT                           -- the merge commit, recorded pre-publish
 );
 -- Invariant 4 enforced by the database itself: at most one row may be `merging`.
 CREATE UNIQUE INDEX IF NOT EXISTS one_merging ON tasks(state) WHERE state = 'merging';
@@ -164,6 +166,11 @@ class TaskStore:
                 raise StaleState(task_id)
             if new_state is State.CANCELLED:
                 _cascade_cancel(db, task_id)
+            if event is Event.TAKE:  # a fresh merge attempt: forget any earlier one
+                db.execute(
+                    "UPDATE tasks SET base_sha = NULL, merge_sha = NULL WHERE id = ?",
+                    (task_id,),
+                )
         return self.get(task_id)
 
     def grant_scope(self, task_id: int, extra_globs: list[str]) -> Task:
@@ -201,14 +208,35 @@ class TaskStore:
                 raise StaleState(task_id)
         return self.get(task_id)
 
-    def recover_merging(self) -> list[Task]:
-        """On restart, requeue any task stuck in `merging` (invariant 12).
+    def record_merge_commit(self, task_id: int, base_sha: str, merge_sha: str) -> Task:
+        """Record the merge about to be published, BEFORE main is moved (invariant 12).
 
-        Store side only: the merge engine must already have rolled the branch out of
-        main (or confirmed main was never touched) before calling this.
+        The merge engine builds the merge commit off main, runs the full suite on it,
+        calls this, and only then moves main from `base_sha` to `merge_sha`. So if a
+        crash leaves the task `merging`, recovery can tell whether main moved.
         """
-        stuck = self.list(State.MERGING)
-        return [self.transition(t.id, Event.RECOVER) for t in stuck]
+        with self._tx() as db:
+            cur = db.execute(
+                "UPDATE tasks SET base_sha = ?, merge_sha = ? WHERE id = ? AND state = ?",
+                (base_sha, merge_sha, task_id, State.MERGING),
+            )
+            if cur.rowcount != 1:
+                raise StaleState(task_id)
+        return self.get(task_id)
+
+    def recover_merging(self, landed: Callable[[str], bool]) -> list[Task]:
+        """On restart, settle any task stuck in `merging` (invariant 12).
+
+        `landed(sha)` answers whether a commit is on main (the caller owns git; the
+        store does not). If the task's recorded merge commit landed, main only moved
+        after the full suite passed, so both gates were met: finish it as `merged`.
+        Otherwise main was never touched: requeue it to `queued_for_merge`.
+        """
+        settled = []
+        for t in self.list(State.MERGING):
+            done = t.merge_sha is not None and landed(t.merge_sha)
+            settled.append(self.transition(t.id, Event.MERGE_CLEAN if done else Event.RECOVER))
+        return settled
 
 
 def _cascade_cancel(db: sqlite3.Connection, root_id: int) -> None:
@@ -246,4 +274,6 @@ def _to_task(row: sqlite3.Row) -> Task:
         worktree_path=row["worktree_path"],
         review_notes=row["review_notes"],
         diff=row["diff"],
+        base_sha=row["base_sha"],
+        merge_sha=row["merge_sha"],
     )

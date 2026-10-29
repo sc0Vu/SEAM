@@ -54,8 +54,10 @@ broken). Do not add worker types, Postgres, a UI, or the architect role until bo
     until it has passed review and merge; its tests are untrusted code.
 11. **Bounded retries.** A task that fails review or merge a fixed number of times
     (default 3) goes to `needs_human` — it never loops `changes_requested` forever.
-12. **Crash-safe merge.** On restart, any task stuck in `merging` is rolled back
-    (branch un-merged from main) and requeued; a partial merge never reaches main.
+12. **Crash-safe merge.** Main moves only after both gates pass, and the merge commit
+    is recorded before it does. On restart, a task stuck in `merging` whose merge
+    commit is on main is finished as `merged`; any other is requeued. A partial merge
+    never reaches main.
 13. **Secrets via env only.** LLM/agent API keys from env vars; never hard-coded or
     committed. `.env` and `*.local.*` gitignored.
 

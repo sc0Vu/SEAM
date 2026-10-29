@@ -35,3 +35,5 @@ class Task:
     worktree_path: str | None = None
     review_notes: str = ""
     diff: str = ""
+    base_sha: str | None = None
+    merge_sha: str | None = None
