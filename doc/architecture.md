@@ -77,7 +77,7 @@ a shared interface unilaterally (the main source of semantic conflicts).
 ## 3. Task state machine
 
 ```
-open ─claim(worker)─▶ claimed ─▶ in_progress ─submit─▶ submitted
+open ─claim(worker)─▶ claimed ─start─▶ in_progress ─submit─▶ submitted
 in_progress ─needs files outside scope─▶ scope_requested ─grant(lead)─▶ in_progress
                                                         ─deny(lead)──▶ blocked
 submitted ─pickup(reviewer)─▶ in_review
@@ -88,9 +88,19 @@ merging ─clean─▶ merged                               (→ wake lead)
 merging ─textual or semantic conflict─▶ needs_human
 needs_human ─resolve(human/architect)─▶ queued_for_merge
 (attempts exceeded on review/merge) ─▶ needs_human
-any ─block/supersede(lead)─▶ cancelled
+any non-terminal except merging ─cancel(lead)─▶ cancelled
 on restart: any task in `merging` ─rollback+requeue─▶ queued_for_merge
 ```
+
+Implemented as a pure transition table in `engine/states.py` (`next_state`); the store
+routes every state change through it. `cancel` is refused while `merging` — a merge in
+flight finishes or is recovered, never abandoned half-applied.
+
+**Scope-holding states.** A task's file_scope stays reserved (§5) in every state
+except `open`, `merged`, and `cancelled` — i.e. whenever a branch with live edits
+exists. This deliberately includes `submitted`, `approved`, `blocked`, and
+`needs_human`: those branches may still merge, so a second task touching the same
+files would reintroduce exactly the conflict the claim exists to prevent.
 
 Invariants: `merging` is a single global slot; no `merged` without `in_review` +
 merge-time full suite; `changes_requested` returns to the same worker and is **bounded
