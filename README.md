@@ -1,6 +1,6 @@
 # SEAM — Software Engineering Agent Merge
 
-*Many agents, one codebase, one seam.*
+*Many agents, one codebase, one seam.* · Project page: <https://sc0vu.github.io/SEAM/>
 
 SEAM runs several coding agents on one goal in parallel and integrates their work
 into one real git repository **without a human in the loop for the normal case**.

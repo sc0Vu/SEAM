@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SEAM — Software Engineering Agent Merge</title>
+<meta name="description" content="SEAM runs several coding agents on one goal in parallel and integrates their work into one real git repository: disjoint file scopes, independent review, a serialized merge engine, and escalation instead of silent breakage.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232f6fdf'/%3E%3Cpath d='M9 22c3-6 11-6 14-12' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #fbfbfa; --fg: #1d2129; --muted: #5b6270; --line: #e3e5e8; --card: #ffffff;
+  --accent: #2f6fdf; --accent-soft: #e8f0fd; --ok: #1f8a4c; --ok-soft: #e6f4ec;
+  --warn: #a86400; --warn-soft: #fbf1e1; --code: #f2f3f5;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1216; --fg: #e6e8eb; --muted: #9aa3ae; --line: #262b33; --card: #161a20;
+    --accent: #6f9cf0; --accent-soft: #1a2638; --ok: #4fc183; --ok-soft: #14271d;
+    --warn: #e0a64a; --warn-soft: #2a2114; --code: #1c2128;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.88em; }
+code { background: var(--code); padding: 0.1em 0.35em; border-radius: 4px; }
+pre { background: var(--code); padding: 14px 16px; border-radius: 8px; overflow-x: auto; line-height: 1.5; }
+pre code { background: none; padding: 0; }
+.wrap { max-width: 880px; margin: 0 auto; padding: 0 16px; }
+header.top { border-bottom: 1px solid var(--line); }
+header.top .wrap { display: flex; align-items: center; justify-content: space-between; height: 56px; }
+.brand { font-weight: 700; letter-spacing: 0.04em; color: var(--fg); }
+nav a { margin-left: 18px; color: var(--muted); font-size: 0.95em; }
+nav a:first-child { margin-left: 0; }
+.hero { padding-top: 64px; padding-bottom: 40px; }
+.hero h1 { font-size: clamp(2rem, 5vw, 2.9rem); line-height: 1.15; margin: 0 0 12px; letter-spacing: -0.01em; }
+.hero .tag { color: var(--muted); font-size: 1.15em; margin: 0 0 24px; }
+.hero p.lede { font-size: 1.08em; max-width: 680px; }
+.status {
+  display: inline-block; font-size: 0.85em; padding: 4px 10px; border-radius: 999px;
+  background: var(--warn-soft); color: var(--warn); margin-bottom: 18px; font-weight: 600;
+}
+.buttons { margin-top: 26px; display: flex; flex-wrap: wrap; gap: 10px; }
+.btn {
+  display: inline-block; padding: 10px 16px; border-radius: 8px; font-weight: 600;
+  border: 1px solid var(--line); color: var(--fg); background: var(--card);
+}
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn:hover { text-decoration: none; filter: brightness(1.05); }
+section { padding: 36px 0; border-top: 1px solid var(--line); }
+section h2 { font-size: 1.5rem; margin: 0 0 14px; }
+section > .wrap > p { max-width: 720px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 18px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+.card h3 { margin: 0 0 6px; font-size: 1.02rem; }
+.card p { margin: 0; color: var(--muted); font-size: 0.95em; }
+.flow { margin-top: 18px; display: flex; flex-direction: column; align-items: stretch; gap: 0; }
+.stage {
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px;
+  display: grid; grid-template-columns: 150px 1fr; gap: 12px; align-items: baseline;
+}
+.stage b { color: var(--accent); font-size: 0.9em; letter-spacing: 0.05em; }
+.stage span { color: var(--muted); font-size: 0.95em; }
+.stage.workers span { color: var(--fg); }
+.arrow { text-align: center; color: var(--muted); line-height: 1; padding: 4px 0; font-size: 1.1em; }
+.exit { color: var(--warn); font-weight: 600; }
+table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 0.95em; }
+th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.04em; }
+.tablewrap { overflow-x: auto; }
+.pill { display: inline-block; font-size: 0.8em; padding: 1px 8px; border-radius: 999px; font-weight: 600; white-space: nowrap; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.caveats { background: var(--warn-soft); border-radius: 10px; padding: 14px 18px; margin-top: 18px; }
+.caveats h3 { margin: 0 0 6px; font-size: 1rem; color: var(--warn); }
+.caveats ul { margin: 0; padding-left: 20px; }
+.caveats li { margin: 4px 0; }
+footer { border-top: 1px solid var(--line); padding: 28px 0 48px; color: var(--muted); font-size: 0.9em; }
+@media (max-width: 560px) {
+  nav a.opt { display: none; }
+  .stage { grid-template-columns: 1fr; gap: 2px; }
+  .hero { padding-top: 40px; }
+  nav a { margin-left: 14px; }
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">SEAM</span>
+    <nav>
+      <a class="opt" href="#how">How it works</a>
+      <a class="opt" href="#results">Results</a>
+      <a href="#start">Get started</a>
+      <a href="https://github.com/sc0Vu/SEAM">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<div class="wrap hero">
+  <div class="status">Research prototype · results are early, see below</div>
+  <h1>Many agents, one codebase, one seam.</h1>
+  <p class="tag">SEAM — Software Engineering Agent Merge</p>
+  <p class="lede">SEAM runs several coding agents on one goal in parallel and integrates
+  their work into one real git repository. Its focus is the part most multi-agent coders
+  skip: <strong>autonomous integration</strong>. No two agents touch the same files, every
+  change passes an independent review and the full test suite before it merges, and a
+  true semantic conflict is escalated to a human rather than silently merged.</p>
+  <div class="buttons">
+    <a class="btn primary" href="https://github.com/sc0Vu/SEAM">View on GitHub</a>
+    <a class="btn" href="https://github.com/sc0Vu/SEAM/blob/main/doc/architecture.md">Read the design</a>
+  </div>
+</div>
+
+<section id="guarantees">
+  <div class="wrap">
+    <h2>What SEAM guarantees</h2>
+    <p>Each rule is enforced by the engine, not by asking the agents nicely.</p>
+    <div class="grid">
+      <div class="card"><h3>Disjoint file scopes</h3><p>Every task declares the files it may touch. The atomic claim never lets two in-flight tasks overlap, so most merges stay trivial.</p></div>
+      <div class="card"><h3>No silent scope escape</h3><p>A worker that needs files outside its scope stops and asks the lead, which re-checks disjointness before granting.</p></div>
+      <div class="card"><h3>Two gates before merge</h3><p>An independent review of the diff against the spec, then the full test suite on the merged tree. Two distinct runs.</p></div>
+      <div class="card"><h3>One merge at a time</h3><p>A single global merge slot. Each merge moves main; the next one is tested against the new main.</p></div>
+      <div class="card"><h3>Escalate, never auto-resolve</h3><p>If the merged tree fails with no textual conflict, the task goes to a human. Main never receives the break.</p></div>
+      <div class="card"><h3>Crash-safe, bounded</h3><p>The merge commit is recorded before main moves; review retries are capped; there is no infinite fix loop.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <div class="wrap">
+    <h2>How it works</h2>
+    <div class="flow" role="list">
+      <div class="stage" role="listitem"><b>LEAD</b><span>A goal becomes typed, file-scoped, dependency-ordered tasks — from a hand-written plan, or drafted by an LLM planner that reads the repo in the sandbox.</span></div>
+      <div class="arrow" aria-hidden="true">↓</div>
+      <div class="stage" role="listitem"><b>TASK STORE</b><span>Atomic claim: matching type, dependencies merged, scope disjoint from every in-flight task.</span></div>
+      <div class="arrow" aria-hidden="true">↓</div>
+      <div class="stage workers" role="listitem"><b>WORKERS</b><span>Claude Code headless, one git worktree and branch per task, each in its own Docker container. Many run in parallel.</span></div>
+      <div class="arrow" aria-hidden="true">↓</div>
+      <div class="stage" role="listitem"><b>REVIEW GATE</b><span>Deterministic checks first (reviewer ≠ author, in scope, the task's own tests green), then a tool-less LLM reviewer judges the diff and the original files against the spec.</span></div>
+      <div class="arrow" aria-hidden="true">↓</div>
+      <div class="stage" role="listitem"><b>MERGE ENGINE</b><span>One task at a time: trial merge, then the FULL suite on the merged tree. Green → main moves. Red or conflict → <span class="exit">needs_human</span>.</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="safety">
+  <div class="wrap">
+    <h2>Safety model</h2>
+    <div class="grid">
+      <div class="card"><h3>Everything in a container</h3><p>Worker runs, every test run, the merge-time suite and the planner execute in Docker, never on the host. Test runs have no network.</p></div>
+      <div class="card"><h3>Agents never hold your key</h3><p>Agents sit on an internal network whose only host is SEAM's credential proxy. They get a placeholder; the proxy forwards only model calls to the Anthropic API.</p></div>
+      <div class="card"><h3>Agents never run git</h3><p>SEAM stages and commits their edits with git hooks disabled; a worktree's <code>.git</code> is mounted read-only.</p></div>
+      <div class="card"><h3>A reviewer with no tools</h3><p>The reviewer reads the spec, the diff and the original files and returns a verdict. It cannot execute or edit anything.</p></div>
+    </div>
+    <p style="margin-top:16px;color:var(--muted)">Not covered yet: a compromised agent can still spend model quota through the proxy until its run's time and budget caps end it.</p>
+  </div>
+</section>
+
+<section id="results">
+  <div class="wrap">
+    <h2>Results so far</h2>
+    <p>Real agents (Claude Code workers, an Opus reviewer), October 2026. Full detail in the
+    <a href="https://github.com/sc0Vu/SEAM/blob/main/doc/architecture.md">design doc</a>, §8, §11 and §12.</p>
+    <div class="tablewrap">
+    <table>
+      <thead><tr><th>Run</th><th>Outcome</th><th>Cost</th></tr></thead>
+      <tbody>
+        <tr><td>Toy repo, two disjoint tasks</td><td><span class="pill ok">merged 2/2</span> zero human touch; two workers in parallel</td><td>≈ $0.05</td></tr>
+        <tr><td>Toy repo, semantic conflict</td><td><span class="pill ok">escalated</span> caught by the merge-time suite; main never broke</td><td>$0.21</td></tr>
+        <tr><td>boltons: 8 independent features</td><td><span class="pill ok">merged 8/8</span> 807 tests green on master</td><td>$0.67</td></tr>
+        <tr><td>boltons: 5 tasks with dependencies and a shared file</td><td><span class="pill ok">merged 5/5</span> right order; reviewer rejected 2 real bugs, both fixed on retry</td><td>$1.35</td></tr>
+        <tr><td>LLM planner on the boltons goal</td><td><span class="pill ok">valid plan</span> right dependency; found the cross-module coupling on its own</td><td>$0.07</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="caveats">
+      <h3>What these do not show</h3>
+      <ul>
+        <li><strong>An escalation rate on real code.</strong> No real-code task has escalated yet; the plans so far were written by the AI that built SEAM. The LLM planner exists to measure this honestly.</li>
+        <li><strong>A reliable reviewer.</strong> A single LLM review let a significant, test-passing bug through about half the time. Adversarial probe tests caught every buggy version but also rejected 3 of 4 correct ones, so they are opt-in.</li>
+        <li><strong>Anything statistical.</strong> Each result is one to three runs, on repos and tasks chosen by the project's author.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="start">
+  <div class="wrap">
+    <h2>Get started</h2>
+    <p>Needs Python ≥ 3.11, Docker (on macOS e.g. Colima; keep repos under <code>$HOME</code>),
+    Claude Code on the host, and exactly one credential: <code>CLAUDE_CODE_OAUTH_TOKEN</code>
+    (from <code>claude setup-token</code>) or <code>ANTHROPIC_API_KEY</code>.</p>
+<pre><code>git clone https://github.com/sc0Vu/SEAM && cd SEAM
+python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
+docker build -t seam-sandbox sandbox/
+read -s "CLAUDE_CODE_OAUTH_TOKEN?token: " && export CLAUDE_CODE_OAUTH_TOKEN
+
+# the happy-path case on a throwaway repo
+examples/greeter/make_repo.sh ~/seam-demo/case1
+.venv/bin/python cli.py run --repo ~/seam-demo/case1 \
+    --plan examples/greeter/case1.json --state-dir ~/seam-demo/case1-state
+
+# or let the planner draft a plan for your goal, review it, then run it
+.venv/bin/python cli.py plan --repo ~/my-clone --goal "…" --out plan.json</code></pre>
+    <p>SEAM moves the target branch itself: always run it on a dedicated clone. See the
+    <a href="https://github.com/sc0Vu/SEAM#readme">README</a> for every command and option.</p>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    SEAM is free software under the
+    <a href="https://github.com/sc0Vu/SEAM/blob/main/LICENSE">GNU AGPL v3.0</a>.
+    · <a href="https://github.com/sc0Vu/SEAM">github.com/sc0Vu/SEAM</a>
+  </div>
+</footer>
+</body>
+</html>
