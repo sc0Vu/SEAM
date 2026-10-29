@@ -26,6 +26,7 @@ class WorkerResult:
 
     diff: str = ""
     scope_request: tuple[str, ...] = ()
+    cost_usd: float = 0.0  # what the run spent; the lead charges it to the budget
 
     def __post_init__(self) -> None:
         if bool(self.diff) == bool(self.scope_request):

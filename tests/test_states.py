@@ -95,3 +95,9 @@ def test_failed_worker_runs_are_bounded():
     state, attempts = walk([Event.CLAIM, Event.START, Event.FAIL, Event.FAIL])
     assert (state, attempts) == (State.IN_PROGRESS, 2)
     assert next_state(state, Event.FAIL, attempts) == (State.NEEDS_HUMAN, 3)
+
+
+def test_failed_review_rereviews_without_blaming_worker():
+    state, _ = walk([Event.CLAIM, Event.START, Event.SUBMIT, Event.PICKUP])
+    assert next_state(state, Event.FAIL, 0) == (State.SUBMITTED, 1)
+    assert next_state(state, Event.FAIL, 2) == (State.NEEDS_HUMAN, 3)

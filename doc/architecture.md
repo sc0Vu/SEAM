@@ -96,6 +96,7 @@ submitted ─pickup(reviewer)─▶ in_review
 in_review ─approve─▶ approved ─auto─▶ queued_for_merge
 in_review ─changes_requested─▶ in_progress            (same branch, new run; bounded)
 in_progress ─fail(worker run crashed/empty)─▶ in_progress  (re-run; bounded)
+in_review ─fail(review run crashed)─▶ submitted            (re-review; bounded)
 queued_for_merge ─take(merge engine, SINGLE SLOT)─▶ merging
 merging ─clean─▶ merged                               (→ wake lead)
 merging ─textual or semantic conflict─▶ needs_human

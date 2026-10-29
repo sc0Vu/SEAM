@@ -71,6 +71,7 @@ _TRANSITIONS: dict[tuple[State, Event], State] = {
     (State.SUBMITTED, Event.PICKUP): State.IN_REVIEW,
     (State.IN_REVIEW, Event.APPROVE): State.APPROVED,
     (State.IN_REVIEW, Event.REQUEST_CHANGES): State.IN_PROGRESS,
+    (State.IN_REVIEW, Event.FAIL): State.SUBMITTED,
     (State.APPROVED, Event.ENQUEUE): State.QUEUED_FOR_MERGE,
     (State.QUEUED_FOR_MERGE, Event.TAKE): State.MERGING,
     (State.MERGING, Event.MERGE_CLEAN): State.MERGED,
@@ -91,8 +92,10 @@ def next_state(
       so `merged` is reachable only via in_review -> ... -> merging (invariant 5).
     - `request_changes` counts an attempt; reaching `max_attempts` routes to
       `needs_human` instead of back to `in_progress` (invariant 11, bounded retries).
-    - `fail` (a worker run crashed or produced nothing) counts an attempt the same
-      way, so a worker that keeps failing escalates instead of being re-run forever.
+    - `fail` (a worker or review run crashed, or a worker produced nothing) counts an
+      attempt the same way, so a run that keeps failing escalates instead of being
+      retried forever. A failed review returns the task to `submitted`, not to the
+      worker: the branch was never judged, so it is not the worker's to fix.
     - `merge_conflict` also counts an attempt, for the record (it always escalates).
     - `rework` (a human sends an escalated task back to its branch) resets attempts:
       the human's judgment starts a fresh retry budget.
