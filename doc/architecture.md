@@ -331,8 +331,12 @@ repeat-rate or escalation-rate figure. The first case-1 attempt exposed a bug:
 `git add -A` staged `__pycache__/` written by the worker's own test runs, which the
 gate rejected as out-of-scope edits; fixed by `ARTIFACT_EXCLUDES` (§5). Branches
 committed before that fix cannot drop the bytecode (deletions are excluded too) and
-need a fresh run. The v1 lead is a hand-written plan (`coordinator/lead.py`); its budget is per
-`run` invocation, in memory.
+need a fresh run.
+
+The v1 lead is a hand-written plan (`coordinator/lead.py`); its budget is per `run`
+invocation, in memory. A goal loads once per store: a second load of the same goal id
+raises `GoalAlreadyLoaded` rather than duplicating tasks (duplicates would hold the
+same file_scopes and could never be claimed).
 
 ---
 

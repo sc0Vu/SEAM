@@ -19,6 +19,10 @@ class PlanError(SeamError):
     """The plan is malformed: missing fields, unknown or cyclic dependencies."""
 
 
+class GoalAlreadyLoaded(PlanError):
+    """The store already holds this goal's tasks; loading again would duplicate them."""
+
+
 @dataclass
 class Budget:
     """A goal's dollar ceiling. Spend is charged as agent runs report their cost."""
@@ -92,7 +96,18 @@ class Lead:
         self.budget = budget
 
     def submit_plan(self, plan: Plan) -> dict[str, Task]:
-        """Create every planned task (dependencies first); return them by plan key."""
+        """Create every planned task (dependencies first); return them by plan key.
+
+        A goal is loaded once: if the store already has tasks for it, this raises
+        `GoalAlreadyLoaded` instead of creating duplicates, which would hold the same
+        file_scopes and leave the copies unclaimable. (Check-then-create is safe
+        because the orchestrator process is the store's only writer.)
+        """
+        existing = [t.id for t in self.store.list() if t.spec.goal_id == self.goal_id]
+        if existing:
+            raise GoalAlreadyLoaded(
+                f"goal {self.goal_id!r} is already loaded as tasks {existing}; resume with "
+                "`run` without --plan, or use a fresh --state-dir or a new --goal")
         created: dict[str, Task] = {}
         for t in plan.tasks:
             created[t["key"]] = self.store.create(TaskSpec(

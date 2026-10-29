@@ -42,5 +42,6 @@ examples/greeter/make_repo.sh ~/seam-demo/case2
 git -C ~/seam-demo/case1 log --oneline --graph main
 ```
 
-Re-running `run --plan` on the same state dir adds the tasks again; to resume an
-interrupted run, call `run` without `--plan`.
+Each goal loads once per state dir: re-running `run --plan` there is refused. To
+resume an interrupted run, call `run` without `--plan`; to start over, delete the repo
+and state dirs and run `make_repo.sh` again.

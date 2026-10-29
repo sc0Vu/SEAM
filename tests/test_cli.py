@@ -50,3 +50,10 @@ def test_run_refuses_checked_out_target(tmp_path, monkeypatch, capsys):
     git(repo, "checkout", "-q", "main")
     assert cli.main(["run", "--repo", str(repo), "--state-dir", str(tmp_path / "s")]) == 1
     assert "dedicated clone" in capsys.readouterr().err
+
+
+def test_add_goal_twice_is_a_clean_error(tmp_path, capsys):
+    args = ["add-goal", "--state-dir", str(tmp_path), "--plan", str(EXAMPLES / "case1.json")]
+    assert cli.main(args) == 0
+    assert cli.main(args) == 1
+    assert "GoalAlreadyLoaded" in capsys.readouterr().err

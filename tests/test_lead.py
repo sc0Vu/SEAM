@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from coordinator.lead import Budget, Lead, PlanError, load_plan
+from coordinator.lead import Budget, GoalAlreadyLoaded, Lead, PlanError, load_plan
 from engine.states import State
 from store import TaskStore
 
@@ -56,3 +56,14 @@ def test_budget_stops_dispatch_at_ceiling():
     assert lead.can_dispatch()
     lead.budget.charge(0.4)
     assert not lead.can_dispatch()
+
+
+def test_loading_a_goal_twice_is_refused_and_creates_nothing(tmp_path):
+    plan = load_plan(write_plan(tmp_path, [t("a"), t("b", scope=("y/**",))]))
+    store = TaskStore()
+    Lead(store, "g1", Budget(1.0)).submit_plan(plan)
+    with pytest.raises(GoalAlreadyLoaded, match=r"\[1, 2\]"):
+        Lead(store, "g1", Budget(1.0)).submit_plan(plan)
+    assert len(store.list()) == 2
+    Lead(store, "g2", Budget(1.0)).submit_plan(plan)  # another goal is fine
+    assert len(store.list()) == 4
