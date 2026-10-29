@@ -21,7 +21,7 @@ from engine.orchestrator import Orchestrator
 from engine.states import TERMINAL, State
 from engine.usage import format_usage, totals_by_role
 from reviewer.claude_code import ClaudeCodeReviewer
-from reviewer.gate import ReviewGate
+from reviewer.gate import DEFAULT_PROBE_CMD, ReviewGate
 from sandbox.docker import DEFAULT_IMAGE, CredentialProxyContainer, DockerSandbox
 from sandbox.proxy import CREDENTIAL_KINDS
 from store import TaskStore
@@ -134,12 +134,14 @@ def _run_team(args, store, repo, tests, scratch, proxy) -> None:
     ]
     if not workers:
         raise PreflightError("no unfinished tasks: pass --plan or run add-goal first")
-    reviewer = ClaudeCodeReviewer(model=args.reviewer_model or args.model)
+    reviewer = ClaudeCodeReviewer(model=args.reviewer_model or args.model,
+                                  probes=args.review_probes)
     lead = Lead(store, args.goal or "goal", Budget(args.budget_usd))
     orch = Orchestrator(
         store, lead, repo, workers,
         gate=ReviewGate(repo, tests, reviewer, target=args.target, scratch=scratch,
-                        focused_context=args.review_context == "focused"),
+                        focused_context=args.review_context == "focused",
+                        probe_cmd=DEFAULT_PROBE_CMD if args.review_probes else None),
         merger=MergeEngine(store, repo, tests, suite_cmd=args.suite_cmd,
                            target=args.target, scratch=scratch),
         worktree_root=args.state_dir / "worktrees",
@@ -230,6 +232,9 @@ def parser() -> argparse.ArgumentParser:
     r.add_argument("--review-context", choices=["whole", "focused"], default="whole",
                    help="original files for the reviewer: whole, or focused on what the "
                         "diff touches (cheaper; less tested, see doc §8)")
+    r.add_argument("--review-probes", action="store_true",
+                   help="reviewer also writes adversarial pytest probes; the gate runs "
+                        "them in the sandbox and any failure rejects (doc §11)")
     r.set_defaults(func=cmd_run)
 
     s = sub.add_parser("status", help="task states, merge queue, escalations")

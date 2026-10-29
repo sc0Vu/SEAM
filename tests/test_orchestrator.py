@@ -6,6 +6,7 @@ logic without any model calls. They are the engine-level regression tests for th
 v1 cases; the real-runtime run is examples/greeter (see its README).
 """
 
+import json
 import tempfile
 import threading
 from pathlib import Path
@@ -269,3 +270,15 @@ def test_worker_that_keeps_asking_for_scope_escalates(tmp_path):
     assert final.spec.file_scope == ("g.py", "more1.py", "more2.py")  # third never granted
     assert "more3.py" in final.review_notes
     assert len(w.runs) == 3
+
+
+def test_review_probes_are_recorded_with_the_run(tmp_path):
+    from reviewer.base import Probe
+    probe = Probe("test_probe_a.py", "def test_a():\n    assert True\n")
+    reviewer = ScriptedReviewer([Verdict(True, "ok", cost_usd=0.01, probes=(probe,))])
+    _, store, _, orch = build(tmp_path, [ScriptedWorker("w1", {"a": writes({"a.py": ""})})],
+                              reviewer)
+    t = add(store, "a", ["a.py"])
+    orch.run()
+    review = next(r for r in store.runs(t.id) if r.role == "reviewer")
+    assert json.loads(review.probes) == [{"name": "test_probe_a.py", "code": probe.code}]

@@ -37,9 +37,12 @@ def test_store_migrates_an_old_runs_table_and_keeps_notes(tmp_path):
     TaskStore(db)  # current schema, then strip the column to mimic an old state dir
     con = sqlite3.connect(db)
     con.execute("ALTER TABLE runs DROP COLUMN notes")
+    con.execute("ALTER TABLE runs DROP COLUMN probes")
     con.commit()
     con.close()
     store = TaskStore(db)
     t = store.create(spec(["a/**"]))
-    store.record_run(RunRecord(t.id, "reviewer", "r", "reject", notes="add tests"))
+    store.record_run(RunRecord(t.id, "reviewer", "r", "reject", notes="add tests",
+                               probes='[{"name": "test_probe_a.py", "code": "x"}]'))
     assert store.runs(t.id)[0].notes == "add tests"
+    assert "test_probe_a.py" in store.runs(t.id)[0].probes

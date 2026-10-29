@@ -16,12 +16,13 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import tempfile
 from collections.abc import Callable
 
 from engine.errors import SeamError
-from reviewer.base import ReviewRequest, Verdict
+from reviewer.base import Probe, ReviewRequest, Verdict
 from workers.claude_code import parse_result_json, usage_from_result
 
 _MAX_DIFF = 200_000
@@ -31,6 +32,35 @@ VERDICT_SCHEMA = {
     "properties": {"approve": {"type": "boolean"}, "notes": {"type": "string"}},
     "required": ["approve", "notes"],
 }
+
+MAX_PROBES = 3
+PROBE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        **VERDICT_SCHEMA["properties"],
+        "probes": {
+            "type": "array",
+            "maxItems": MAX_PROBES,
+            "items": {
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "code": {"type": "string"}},
+                "required": ["name", "code"],
+            },
+        },
+    },
+    "required": ["approve", "notes", "probes"],
+}
+
+PROBE_INSTRUCTIONS = """
+Also write `probes`: 1 to 3 small pytest test files that try to BREAK the change, even
+if you approve. Target what the change's own tests do not check and a careless
+implementation gets wrong: aliases and other accessors of the same state, mutation of
+inputs or of the original object, edge values, consistency between related APIs. Each
+probe is run with pytest from the repository root against the CHANGED code; import it
+the way the repository's own tests do. Every probe must pass on ANY correct
+implementation of the task and spec: assert only what the spec or the original code
+requires. If a probe fails, the change is rejected with the probe as the evidence.
+"""
 
 SYSTEM_PROMPT = """\
 You are the independent code reviewer in SEAM. You did not write the change you are
@@ -85,6 +115,23 @@ def _render_files(request: ReviewRequest) -> str:
     return "\n".join(parts) or "(none: every changed file is new)"
 
 
+def _probes(raw: object) -> tuple[Probe, ...]:
+    """Valid probes only, with safe unique file names (`test_probe_<name>.py`)."""
+    out: list[Probe] = []
+    seen: set[str] = set()
+    for item in raw if isinstance(raw, list) else []:
+        if not isinstance(item, dict) or not str(item.get("code", "")).strip():
+            continue
+        stem = re.sub(r"[^a-z0-9_]+", "_", str(item.get("name", "")).lower()).strip("_")
+        stem = re.sub(r"^(test_)?(probe_)?", "", stem)[:40] or "probe"
+        name, n = f"test_probe_{stem}.py", 2
+        while name in seen:
+            name, n = f"test_probe_{stem}_{n}.py", n + 1
+        seen.add(name)
+        out.append(Probe(name, str(item["code"])))
+    return tuple(out[:MAX_PROBES])
+
+
 class ReviewFailed(SeamError):
     """The review run itself failed (no verdict); the task is re-reviewed, bounded."""
 
@@ -111,7 +158,10 @@ class ClaudeCodeReviewer:
         max_budget_usd: float = 0.5,
         claude: str = "claude",
         runner: Runner = _run,
+        probes: bool = False,
     ) -> None:
+        """`probes`: also ask for adversarial probe tests (doc §11)."""
+        self.probes = probes
         self.id = id
         self.model = model
         self.max_budget_usd = max_budget_usd
@@ -123,12 +173,12 @@ class ClaudeCodeReviewer:
             self.claude, "-p",
             "--output-format", "json",
             "--tools", "",
-            "--system-prompt", SYSTEM_PROMPT,
+            "--system-prompt", SYSTEM_PROMPT + (PROBE_INSTRUCTIONS if self.probes else ""),
             "--setting-sources", "project",  # run from an empty dir: no settings at all
             "--disable-slash-commands",
             "--strict-mcp-config",
             "--no-session-persistence",
-            "--json-schema", json.dumps(VERDICT_SCHEMA),
+            "--json-schema", json.dumps(PROBE_SCHEMA if self.probes else VERDICT_SCHEMA),
             "--max-budget-usd", str(self.max_budget_usd),
         ]
         if self.model:
@@ -160,4 +210,5 @@ class ClaudeCodeReviewer:
         if data.get("is_error") or not isinstance(verdict, dict) or "approve" not in verdict:
             raise ReviewFailed(f"no verdict from reviewer: {data.get('result')!r}")
         return Verdict(bool(verdict["approve"]), str(verdict.get("notes", "")), cost,
-                       usage_from_result(data))
+                       usage_from_result(data),
+                       _probes(verdict.get("probes")) if self.probes else ())

@@ -3,8 +3,9 @@ import pytest
 from engine.git import GitRepo
 from engine.states import State
 from engine.task import Task, TaskSpec
-from reviewer.base import ReviewRequest, Verdict
+from reviewer.base import Probe, ReviewRequest, Verdict
 from reviewer.gate import ReviewerNotIndependent, ReviewGate
+from sandbox.base import RunResult
 from tests.fakes import ImportCheckSandbox
 from tests.gitfixture import branch_with, git, make_repo
 
@@ -120,3 +121,72 @@ def test_large_files_are_whole_by_default_and_focused_on_request(tmp_path):
         text = reviewer.requests[0].files["big.py"]
         assert (text == big) is expect_whole
         assert "return x + 7" in text  # the touched definition is there either way
+
+
+class ProbeSandbox(ImportCheckSandbox):
+    """Like ImportCheckSandbox, but the probe command returns `probe_result` and the
+    probe files it was given are recorded (nothing is executed)."""
+
+    def __init__(self, probe_result):
+        super().__init__()
+        self.probe_result, self.probe_files = probe_result, None
+
+    def run(self, cmd, workdir, timeout):
+        if "seam_probes" in cmd:
+            self.probe_files = {p.name: p.read_text() for p in (workdir / "seam_probes").iterdir()}
+            self.calls.append((cmd, workdir, []))
+            return self.probe_result
+        return super().run(cmd, workdir, timeout)
+
+
+def probe_gate(tmp_path, probe_result, verdict, probe_cmd="python -m pytest seam_probes"):
+    repo = make_repo(tmp_path, {"lib.py": "def greet(): pass\n"})
+    branch_with(repo, "t", {"feat/x.py": "X = 1\n"})
+    sandbox = ProbeSandbox(probe_result)
+    gate = ReviewGate(GitRepo(repo), sandbox, RecordingReviewer(verdict=verdict),
+                      probe_cmd=probe_cmd)
+    return gate, sandbox
+
+
+PROBE = Probe("test_probe_x.py", "from feat.x import X\ndef test_x():\n    assert X == 2\n")
+
+
+@pytest.mark.parametrize("exit_code", [1, 2])
+def test_a_failing_probe_always_rejects_with_the_evidence(tmp_path, exit_code):
+    gate, sandbox = probe_gate(tmp_path, RunResult(exit_code, "E  assert 1 == 2"),
+                               Verdict(True, "looks fine", probes=(PROBE,)))
+    v = gate.review(task("t", ["feat/**"]))
+    assert not v.approve
+    assert "assert X == 2" in v.notes and "E  assert 1 == 2" in v.notes
+    assert "looks fine" in v.notes  # the reviewer's own view is kept for the author
+    assert sandbox.probe_files == {"test_probe_x.py": PROBE.code}
+
+
+@pytest.mark.parametrize("result, word", [
+    (RunResult(0, "1 passed"), "passed"),
+    (RunResult(5, "no tests ran"), "broken"),
+    (RunResult(-1, "", timed_out=True), "timed out"),
+])
+def test_passing_or_broken_probes_leave_the_verdict(tmp_path, result, word):
+    gate, _ = probe_gate(tmp_path, result, Verdict(True, "ok", probes=(PROBE,)))
+    v = gate.review(task("t", ["feat/**"]))
+    assert v.approve and f"[probes {word}" in v.notes
+
+
+def test_a_rejection_stays_a_rejection_when_probes_pass(tmp_path):
+    gate, _ = probe_gate(tmp_path, RunResult(0, ""), Verdict(False, "no tests", probes=(PROBE,)))
+    assert not gate.review(task("t", ["feat/**"])).approve
+
+
+def test_invalid_python_probes_are_dropped_unrun(tmp_path):
+    bad = Probe("test_probe_bad.py", "def test(:\n")
+    gate, sandbox = probe_gate(tmp_path, RunResult(1, "would reject"),
+                               Verdict(True, "ok", probes=(bad,)))
+    v = gate.review(task("t", ["feat/**"]))
+    assert v.approve and sandbox.probe_files is None and "invalid" in v.notes
+
+
+def test_probes_are_ignored_without_a_probe_cmd(tmp_path):
+    gate, sandbox = probe_gate(tmp_path, RunResult(1, "would reject"),
+                               Verdict(True, "ok", probes=(PROBE,)), probe_cmd=None)
+    assert gate.review(task("t", ["feat/**"])).approve and sandbox.probe_files is None

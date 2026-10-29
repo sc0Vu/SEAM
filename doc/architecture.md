@@ -558,7 +558,7 @@ endpoints get 403, no route to the internet).
 
 ---
 
-## 11. Proposed (not built): adversarial probe tests in review
+## 11. Adversarial probe tests in review (built, opt-in: `run --review-probes`)
 
 **Constraint served: review reliability (invariants 5, 6).** §8 measured that a single
 LLM review let a significant, test-passing bug through half the time: judgment alone
@@ -575,6 +575,16 @@ them in the sandbox (no network):
 
 Probes are never merged; they are review evidence, kept with the run. Python/pytest
 only at first (`probe_cmd` on the gate).
+
+**Built** in `reviewer/claude_code.py` (`PROBE_SCHEMA`, `PROBE_INSTRUCTIONS`; at most 3
+probes, names sanitized to `test_probe_*.py`) and `ReviewGate.run_probes`. A failing
+probe ALWAYS rejects (owner's decision): pytest exit 1 (a test failed) or 2 (collection
+failed, e.g. importing what the change never added). Exit 5 / usage errors / timeouts
+mean broken probes and leave the verdict; probes that are not valid Python are
+dropped unrun (parsed with `ast`, never executed on the host). Probes are stored in
+`runs.probes`. Mechanism check without a model: a hand-written alias probe rejected
+bench-2's buggy `without_query_params` and passed the fixed one, in the real sandbox.
+Whether the *reviewer* writes such probes is step 3 below.
 
 **Risks and how they are measured.** A probe can encode a wrong expectation and reject
 correct work. Measure on bench-2: the two confirmed-buggy first versions (catch rate,

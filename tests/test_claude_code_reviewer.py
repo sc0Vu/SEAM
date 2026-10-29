@@ -92,3 +92,30 @@ def test_default_runner_disables_prompt_caching(monkeypatch):
     monkeypatch.setattr(rc.subprocess, "run", fake_run)
     rc._run(["claude"], "prompt")
     assert seen["DISABLE_PROMPT_CACHING"] == "1"
+
+
+def test_probes_are_off_by_default_and_ignored():
+    runner = FakeRunner(result(structured_output={
+        "approve": True, "notes": "", "probes": [{"name": "x", "code": "def test_x(): pass"}]}))
+    r = ClaudeCodeReviewer(runner=runner)
+    assert r.review(request()).probes == ()
+    argv = runner.calls[0][0]
+    assert "probes" not in argv[argv.index("--json-schema") + 1]
+    assert "BREAK" not in argv[argv.index("--system-prompt") + 1]
+
+
+def test_probes_requested_parsed_and_sanitized():
+    raw = [{"name": "Test Alias / qp!", "code": "def test_a(): assert 1"},
+           {"name": "test_alias_qp", "code": "def test_b(): assert 1"},  # same stem
+           {"name": "empty", "code": "   "},  # dropped
+           {"name": "../../etc", "code": "def test_c(): assert 1"},
+           {"name": "four", "code": "def test_d(): assert 1"}]
+    runner = FakeRunner(result(structured_output={"approve": True, "notes": "", "probes": raw}))
+    r = ClaudeCodeReviewer(runner=runner, probes=True)
+    probes = r.review(request()).probes
+    assert [p.name for p in probes] == [
+        "test_probe_alias_qp.py", "test_probe_alias_qp_2.py", "test_probe_etc.py"]  # max 3
+    argv = runner.calls[0][0]
+    assert json.loads(argv[argv.index("--json-schema") + 1])["required"] == [
+        "approve", "notes", "probes"]
+    assert "BREAK" in argv[argv.index("--system-prompt") + 1]

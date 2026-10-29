@@ -44,6 +44,7 @@ class RunRecord:
     cost_usd: float = 0.0
     usage: Usage = Usage()
     notes: str = ""  # a review's notes (kept even after a later run overwrites the task's)
+    probes: str = ""  # a review's probe tests, JSON [{"name", "code"}] (doc §11)
 
 
 def totals_by_role(runs: list[RunRecord]) -> dict[str, tuple[int, float, Usage]]:

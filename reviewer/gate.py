@@ -8,24 +8,34 @@ once the mechanical bar is met:
 4. only then the reviewer runtime judges the diff against the spec, given the changed
    files as they were at the merge base (whole by default; with `focused_context`,
    large files are cut to what the diff touches and uses; bounded by
-   `context_chars`), so it reviews against the real code, not its memory of it.
+   `context_chars`), so it reviews against the real code, not its memory of it;
+5. with `probe_cmd` set, the reviewer's adversarial probe tests run in the sandbox on
+   the branch, and any genuine failure rejects the change (doc §11).
 """
 
 from __future__ import annotations
 
+import ast
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 
 from engine.errors import SeamError
 from engine.git import GitRepo
 from engine.scope import path_in_scope
 from engine.task import Task
-from reviewer.base import Reviewer, ReviewRequest, Verdict
+from reviewer.base import Probe, Reviewer, ReviewRequest, Verdict
 from reviewer.context import split_diff, view
 from sandbox.base import Sandbox
 
 _OUTPUT_TAIL = 4000
 DEFAULT_CONTEXT_CHARS = 200_000  # original-file context per review, ~50k tokens
+PROBE_DIR = "seam_probes"
+DEFAULT_PROBE_CMD = f"python -m pytest -q -p no:cacheprovider {PROBE_DIR}"
+# pytest exit codes that mean the code under test misbehaved: 1 = a test failed,
+# 2 = collection failed (e.g. the probe imports what the change never added). Others
+# (no tests collected, usage error, timeout) mean the probes are broken, not the code.
+_PROBE_FAILED = {1, 2}
 
 
 class ReviewerNotIndependent(SeamError):
@@ -45,6 +55,8 @@ class ReviewGate:
         scratch: Path | None = None,
         context_chars: int = DEFAULT_CONTEXT_CHARS,
         focused_context: bool = False,
+        probe_cmd: str | None = None,
+        probe_timeout: float = 300,
     ) -> None:
         """`focused_context`: ~3x cheaper reviews of large files, but on boltons-bench-2
         it caught a confirmed bug 0/3 times vs 1/2 with whole files (doc §8), so it is
@@ -57,6 +69,8 @@ class ReviewGate:
         self.scratch = scratch
         self.context_chars = context_chars
         self.focused_context = focused_context
+        self.probe_cmd = probe_cmd
+        self.probe_timeout = probe_timeout
 
     def originals(self, branch: str, changed: list[str],
                   diff: str = "") -> tuple[dict[str, str], list[str]]:
@@ -114,6 +128,45 @@ class ReviewGate:
 
         diff = self.repo.diff(self.target, branch)
         files, omitted = self.originals(branch, changed, diff)
-        return self.reviewer.review(ReviewRequest(
+        verdict = self.reviewer.review(ReviewRequest(
             task=task, diff=diff, test_output=test_output,
             files=files, files_omitted=tuple(omitted)))
+        if self.probe_cmd and verdict.probes:
+            return self.run_probes(branch, verdict)
+        return verdict
+
+    def run_probes(self, branch: str, verdict: Verdict) -> Verdict:
+        """Run the reviewer's probes on the branch in the sandbox; a genuine failure
+        rejects (always: the failing test is the evidence). Probes that are not valid
+        Python are dropped unrun, so a reviewer typo cannot reject correct work."""
+        valid: list[Probe] = []
+        for p in verdict.probes:
+            try:
+                ast.parse(p.code)  # parsed, never executed on the host
+                valid.append(p)
+            except SyntaxError:
+                pass
+        dropped = len(verdict.probes) - len(valid)
+        if not valid:
+            return replace(verdict,
+                           notes=verdict.notes + f"\n[probes: {dropped} invalid, none run]")
+        with tempfile.TemporaryDirectory(prefix="seam-probe-", dir=self.scratch) as d:
+            root = Path(d)
+            self.repo.export(self.repo.rev_parse(branch), root)
+            (root / PROBE_DIR).mkdir(exist_ok=True)
+            for p in valid:
+                (root / PROBE_DIR / p.name).write_text(p.code)
+            result = self.sandbox.run(self.probe_cmd, root, self.probe_timeout)
+        out = result.output[-_OUTPUT_TAIL:]
+        names = ", ".join(p.name for p in valid)
+        if not result.timed_out and result.exit_code in _PROBE_FAILED:
+            code = "\n\n".join(f"# {p.name}\n{p.code}" for p in valid)
+            return replace(verdict, approve=False, notes=(
+                "A reviewer probe test FAILS on your branch, so the change is rejected. "
+                "Make the code satisfy it (it asserts only what the task and spec "
+                f"require).\n\n--- probes ---\n{code}\n\n--- pytest output ---\n{out}"
+                f"\n\n--- reviewer notes ---\n{verdict.notes}"))
+        why = "timed out" if result.timed_out else ("passed" if result.ok
+                                                    else f"broken (exit {result.exit_code})")
+        extra = f", {dropped} invalid dropped" if dropped else ""
+        return replace(verdict, notes=verdict.notes + f"\n[probes {why}: {names}{extra}]")

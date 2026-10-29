@@ -28,13 +28,24 @@ class ReviewRequest:
 
 
 @dataclass(frozen=True)
+class Probe:
+    """An adversarial test the reviewer wrote against the change (doc §11). It must pass
+    on any correct implementation; the gate runs it in the sandbox, never merges it."""
+
+    name: str  # a pytest file name: test_*.py, sanitized by the reviewer adapter
+    code: str
+
+
+@dataclass(frozen=True)
 class Verdict:
-    """`usage` is None when no model ran (the gate's deterministic checks decided)."""
+    """`usage` is None when no model ran (the gate's deterministic checks decided).
+    `probes` are the reviewer's adversarial tests; the gate decides what they prove."""
 
     approve: bool
     notes: str
     cost_usd: float = 0.0
     usage: Usage | None = None
+    probes: tuple[Probe, ...] = ()
 
 
 @runtime_checkable

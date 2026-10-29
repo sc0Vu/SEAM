@@ -8,6 +8,7 @@ Merges run in the loop, one at a time (invariant 4).
 
 from __future__ import annotations
 
+import json
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
@@ -157,9 +158,9 @@ class Orchestrator:
             self._finish_review(job.task_id, fut)
 
     def _record(self, task_id: int, role: str, agent: str, outcome: str,
-                cost: float, usage: Usage | None, notes: str = "") -> None:
+                cost: float, usage: Usage | None, notes: str = "", probes: str = "") -> None:
         self.store.record_run(
-            RunRecord(task_id, role, agent, outcome, cost, usage or Usage(), notes))
+            RunRecord(task_id, role, agent, outcome, cost, usage or Usage(), notes, probes))
 
     def _finish_work(self, task_id: int, fut: Future, worker_id: str) -> None:
         try:
@@ -211,7 +212,9 @@ class Orchestrator:
         self._record(task_id, "reviewer" if by_model else "gate",
                      self._reviewer_id() if by_model else "gate",
                      "approve" if verdict.approve else "reject", verdict.cost_usd, verdict.usage,
-                     verdict.notes)
+                     verdict.notes,
+                     json.dumps([{"name": p.name, "code": p.code} for p in verdict.probes])
+                     if verdict.probes else "")
         if verdict.approve:
             self.store.transition(task_id, Event.APPROVE, review_notes=verdict.notes)
             self.store.transition(task_id, Event.ENQUEUE)
