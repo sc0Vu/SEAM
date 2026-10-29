@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "seam"
+version = "0.0.1"
+description = "Software Engineering Agent Merge: many agents, one codebase, one seam."
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.setuptools]
+packages = ["contract", "coordinator", "engine", "reviewer", "sandbox", "store", "workers"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.5"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]

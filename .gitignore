@@ -1,0 +1,17 @@
+# secrets (CLAUDE.md invariant 13)
+.env
+.env.*
+*.local.*
+
+# python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+*.egg-info/
+
+# runtime state
+*.sqlite
+*.sqlite3
+.seam/
