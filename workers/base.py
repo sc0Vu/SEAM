@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from engine.task import Task
+from engine.usage import Usage
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,7 @@ class WorkerResult:
     diff: str = ""
     scope_request: tuple[str, ...] = ()
     cost_usd: float = 0.0  # what the run spent; the lead charges it to the budget
+    usage: Usage | None = None  # tokens, when the runtime reports them
 
     def __post_init__(self) -> None:
         if bool(self.diff) == bool(self.scope_request):
@@ -37,9 +39,10 @@ class WorkerFailed(Exception):
     """A worker run crashed or produced nothing. Carries what the run still cost, so
     the lead can charge it; the orchestrator turns it into a bounded `fail`."""
 
-    def __init__(self, message: str, cost_usd: float = 0.0) -> None:
+    def __init__(self, message: str, cost_usd: float = 0.0, usage: Usage | None = None) -> None:
         super().__init__(message)
         self.cost_usd = cost_usd
+        self.usage = usage
 
 
 @runtime_checkable

@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 from engine.task import Task
+from engine.usage import Usage
 
 
 @dataclass(frozen=True)
@@ -23,9 +24,12 @@ class ReviewRequest:
 
 @dataclass(frozen=True)
 class Verdict:
+    """`usage` is None when no model ran (the gate's deterministic checks decided)."""
+
     approve: bool
     notes: str
     cost_usd: float = 0.0
+    usage: Usage | None = None
 
 
 @runtime_checkable

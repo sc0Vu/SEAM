@@ -20,6 +20,7 @@ from engine.errors import MergeSlotBusy, StaleState, TaskNotFound
 from engine.scope import scopes_overlap
 from engine.states import DEFAULT_MAX_ATTEMPTS, SCOPE_HOLDING, Event, State, next_state
 from engine.task import Task, TaskSpec
+from engine.usage import RunRecord, Usage
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS tasks (
@@ -44,6 +45,20 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 -- Invariant 4 enforced by the database itself: at most one row may be `merging`.
 CREATE UNIQUE INDEX IF NOT EXISTS one_merging ON tasks(state) WHERE state = 'merging';
+-- One row per agent run (worker run or review), for cost and token accounting.
+CREATE TABLE IF NOT EXISTS runs (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id            INTEGER NOT NULL REFERENCES tasks(id),
+    role               TEXT    NOT NULL,   -- worker | reviewer | gate
+    agent_id           TEXT    NOT NULL,
+    outcome            TEXT    NOT NULL,
+    cost_usd           REAL    NOT NULL DEFAULT 0,
+    input_tokens       INTEGER NOT NULL DEFAULT 0,
+    cache_read_tokens  INTEGER NOT NULL DEFAULT 0,
+    cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens      INTEGER NOT NULL DEFAULT 0,
+    at                 TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 # Fields `transition` may set alongside a state change.
@@ -237,6 +252,30 @@ class TaskStore:
             done = t.merge_sha is not None and landed(t.merge_sha)
             settled.append(self.transition(t.id, Event.MERGE_CLEAN if done else Event.RECOVER))
         return settled
+
+    def record_run(self, run: RunRecord) -> None:
+        """Append one agent run's cost and tokens (accounting only; no state change)."""
+        u = run.usage
+        with self._tx() as db:
+            db.execute(
+                "INSERT INTO runs (task_id, role, agent_id, outcome, cost_usd, input_tokens,"
+                " cache_read_tokens, cache_write_tokens, output_tokens)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (run.task_id, run.role, run.agent_id, run.outcome, run.cost_usd,
+                 u.input_tokens, u.cache_read_tokens, u.cache_write_tokens, u.output_tokens),
+            )
+
+    def runs(self, task_id: int | None = None) -> list[RunRecord]:
+        """Recorded runs, oldest first; all of them, or one task's."""
+        q, args = "SELECT * FROM runs", ()
+        if task_id is not None:
+            q, args = q + " WHERE task_id = ?", (task_id,)
+        return [
+            RunRecord(r["task_id"], r["role"], r["agent_id"], r["outcome"], r["cost_usd"],
+                      Usage(r["input_tokens"], r["cache_read_tokens"],
+                            r["cache_write_tokens"], r["output_tokens"]))
+            for r in self._db.execute(q + " ORDER BY id", args)
+        ]
 
 
 def _cascade_cancel(db: sqlite3.Connection, root_id: int) -> None:

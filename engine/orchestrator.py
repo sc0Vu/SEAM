@@ -17,6 +17,7 @@ from engine.git import GitRepo
 from engine.merge import MergeEngine
 from engine.states import Event, State
 from engine.task import Task
+from engine.usage import RunRecord, Usage
 from store.sqlite import TaskStore
 from workers.base import Worker, WorkerResult
 
@@ -151,18 +152,27 @@ class Orchestrator:
 
     def _finish(self, fut: Future, job: _Job) -> None:
         if job.kind == "work":
-            self._finish_work(job.task_id, fut)
+            self._finish_work(job.task_id, fut, job.worker.id if job.worker else "?")
         else:
             self._finish_review(job.task_id, fut)
 
-    def _finish_work(self, task_id: int, fut: Future) -> None:
+    def _record(self, task_id: int, role: str, agent: str, outcome: str,
+                cost: float, usage: Usage | None) -> None:
+        self.store.record_run(RunRecord(task_id, role, agent, outcome, cost, usage or Usage()))
+
+    def _finish_work(self, task_id: int, fut: Future, worker_id: str) -> None:
         try:
             result: WorkerResult = fut.result()
         except Exception as e:  # a crashed run is a bounded attempt, not a crash of SEAM
-            self.lead.budget.charge(getattr(e, "cost_usd", 0.0))
+            cost = getattr(e, "cost_usd", 0.0)
+            self.lead.budget.charge(cost)
+            self._record(task_id, "worker", worker_id, "failed", cost, getattr(e, "usage", None))
             self.store.transition(task_id, Event.FAIL, review_notes=f"worker run failed: {e}")
             return
         self.lead.budget.charge(result.cost_usd)
+        self._record(task_id, "worker", worker_id,
+                     "scope_request" if result.scope_request else "diff",
+                     result.cost_usd, result.usage)
         if result.scope_request:
             # Notes go to the next worker run as rejection feedback, so they are set
             # only when this request exhausts the attempts and a human must rule on it.
@@ -189,14 +199,22 @@ class Orchestrator:
         try:
             verdict: Verdict = fut.result()
         except Exception as e:
+            self._record(task_id, "reviewer", self._reviewer_id(), "failed", 0.0, None)
             self.store.transition(task_id, Event.FAIL, review_notes=f"review run failed: {e}")
             return
         self.lead.budget.charge(verdict.cost_usd)
+        by_model = verdict.usage is not None or verdict.cost_usd > 0
+        self._record(task_id, "reviewer" if by_model else "gate",
+                     self._reviewer_id() if by_model else "gate",
+                     "approve" if verdict.approve else "reject", verdict.cost_usd, verdict.usage)
         if verdict.approve:
             self.store.transition(task_id, Event.APPROVE, review_notes=verdict.notes)
             self.store.transition(task_id, Event.ENQUEUE)
         else:
             self.store.transition(task_id, Event.REQUEST_CHANGES, review_notes=verdict.notes)
+
+    def _reviewer_id(self) -> str:
+        return getattr(getattr(self.gate, "reviewer", None), "id", "reviewer")
 
     def _retry_blocked(self) -> None:
         for task_id, globs in list(self._pending_scope.items()):

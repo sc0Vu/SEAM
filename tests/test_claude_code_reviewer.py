@@ -35,9 +35,11 @@ def test_is_a_reviewer():
 
 
 def test_structured_verdict_parsed():
-    runner = FakeRunner(result(structured_output={"approve": False, "notes": "no tests"}))
+    runner = FakeRunner(result(structured_output={"approve": False, "notes": "no tests"},
+                               usage={"input_tokens": 2000, "output_tokens": 40}))
     v = ClaudeCodeReviewer(runner=runner).review(request())
     assert (v.approve, v.notes, v.cost_usd) == (False, "no tests", 0.03)
+    assert (v.usage.input_tokens, v.usage.output_tokens) == (2000, 40)
 
 
 def test_runs_with_no_tools_and_schema_and_diff_on_stdin():

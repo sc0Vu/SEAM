@@ -13,6 +13,7 @@ from pathlib import Path
 
 from engine.git import GitRepo
 from engine.task import Task
+from engine.usage import Usage
 from sandbox.base import Sandbox
 from workers.base import WorkerFailed, WorkerResult
 
@@ -60,6 +61,23 @@ def parse_result_json(output: str) -> dict:
         if isinstance(data, dict) and data.get("type") == "result":
             return data
     raise ValueError("no Claude Code result object in output")
+
+
+def usage_from_result(data: dict) -> Usage:
+    """Tokens from a Claude Code result object. `modelUsage` sums every model the run
+    used (including any helper model); fall back to the top-level `usage`."""
+    per_model = data.get("modelUsage")
+    if isinstance(per_model, dict) and per_model:
+        total = Usage()
+        for m in per_model.values():
+            total += Usage(int(m.get("inputTokens") or 0),
+                           int(m.get("cacheReadInputTokens") or 0),
+                           int(m.get("cacheCreationInputTokens") or 0),
+                           int(m.get("outputTokens") or 0))
+        return total
+    u = data.get("usage") or {}
+    return Usage(int(u.get("input_tokens") or 0), int(u.get("cache_read_input_tokens") or 0),
+                 int(u.get("cache_creation_input_tokens") or 0), int(u.get("output_tokens") or 0))
 
 
 class ClaudeCodeWorker:
@@ -118,17 +136,18 @@ class ClaudeCodeWorker:
         except ValueError as e:
             raise WorkerFailed(f"{e}; exit {result.exit_code}: {result.output[-1000:]}") from e
         cost = float(data.get("total_cost_usd") or 0.0)
+        usage = usage_from_result(data)
         if data.get("is_error") or not result.ok:
-            raise WorkerFailed(f"claude run failed: {data.get('result')!r}", cost)
+            raise WorkerFailed(f"claude run failed: {data.get('result')!r}", cost, usage)
 
         request = worktree / SCOPE_REQUEST_FILE
         if request.exists():
             globs = tuple(g.strip() for g in request.read_text().splitlines() if g.strip())
             request.unlink()
             if globs:
-                return WorkerResult(scope_request=globs, cost_usd=cost)
+                return WorkerResult(scope_request=globs, cost_usd=cost, usage=usage)
 
         diff = GitRepo(worktree).stage_all()
         if not diff:
-            raise WorkerFailed("claude run changed nothing", cost)
-        return WorkerResult(diff=diff, cost_usd=cost)
+            raise WorkerFailed("claude run changed nothing", cost, usage)
+        return WorkerResult(diff=diff, cost_usd=cost, usage=usage)

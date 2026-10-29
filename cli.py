@@ -19,6 +19,7 @@ from engine.git import GitRepo
 from engine.merge import MergeEngine
 from engine.orchestrator import Orchestrator
 from engine.states import TERMINAL, State
+from engine.usage import format_usage, totals_by_role
 from reviewer.claude_code import ClaudeCodeReviewer
 from reviewer.gate import ReviewGate
 from sandbox.docker import DEFAULT_IMAGE, CredentialProxyContainer, DockerSandbox
@@ -148,6 +149,12 @@ def _run_team(args, store, repo, tests, scratch, proxy) -> None:
     _print_tasks(report.tasks)
     print(f"\nspent ${report.spent_usd:.2f}"
           + ("  (BUDGET EXHAUSTED: dispatch stopped)" if report.budget_exhausted else ""))
+    _print_usage(store)
+
+
+def _print_usage(store: TaskStore) -> None:
+    for role, (n, cost, usage) in sorted(totals_by_role(store.runs()).items()):
+        print(f"  {role:<8} {n:>2} run(s)  ${cost:.3f}  {format_usage(usage)}")
 
 
 def _print_tasks(tasks) -> None:
@@ -161,6 +168,10 @@ def cmd_status(args: argparse.Namespace) -> None:
     tasks = _store(args.state_dir).list()
     counts = Counter(t.state for t in tasks)
     print("  ".join(f"{s}={n}" for s, n in sorted(counts.items())) or "no tasks")
+    store = _store(args.state_dir)
+    if store.runs():
+        print("usage:")
+        _print_usage(store)
     merging = [t.id for t in tasks if t.state is State.MERGING]
     queued = [t.id for t in tasks if t.state is State.QUEUED_FOR_MERGE]
     print(f"merge slot: {merging or 'free'}   queue: {queued}")
@@ -171,12 +182,17 @@ def cmd_status(args: argparse.Namespace) -> None:
 
 
 def cmd_inspect(args: argparse.Namespace) -> None:
-    t = _store(args.state_dir).get(args.task)
+    store = _store(args.state_dir)
+    t = store.get(args.task)
     print(f"task {t.id}  [{t.state}]  attempts={t.attempts}  owner={t.owner}")
     print(f"description: {t.spec.description}\nspec_ref: {t.spec.spec_ref}")
     print(f"file_scope: {list(t.spec.file_scope)}  blocked_by: {list(t.spec.blocked_by)}")
     print(f"branch: {t.branch}  worktree: {t.worktree_path}")
     print(f"test_cmd: {t.spec.test_cmd}  merge: {t.base_sha} -> {t.merge_sha}")
+    print("\n--- runs ---")
+    for r in store.runs(t.id) or []:
+        print(f"{r.role:<8} {r.agent_id:<12} {r.outcome:<13} ${r.cost_usd:.3f}  "
+              f"{format_usage(r.usage)}")
     print(f"\n--- review notes ---\n{t.review_notes or '(none)'}")
     print(f"\n--- diff ---\n{t.diff or '(none)'}")
 

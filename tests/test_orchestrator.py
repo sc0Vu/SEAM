@@ -145,6 +145,10 @@ def test_changes_requested_reruns_same_worker_with_notes(tmp_path):
     assert (final.state, final.attempts) == (State.MERGED, 1)
     assert [notes for _, notes in w.runs] == ["", "missing V"]
     assert lead.budget.spent_usd == pytest.approx(0.1)
+    # Every run is accounted: two worker runs, the paid rejection, then the approval
+    # (the scripted approval costs nothing and reports no usage, so it reads as gate).
+    assert [(r.role, r.outcome) for r in store.runs(t.id)] == [
+        ("worker", "diff"), ("reviewer", "reject"), ("worker", "diff"), ("gate", "approve")]
 
 
 def test_dependent_task_waits_for_dependency_to_merge(tmp_path):
@@ -241,6 +245,7 @@ def test_failed_runs_still_charge_the_budget(tmp_path):
     add(store, "x", ["x.py"])
     orch.run()
     assert lead.budget.spent_usd == pytest.approx(0.6)  # three bounded attempts
+    assert [(r.outcome, r.cost_usd) for r in store.runs()] == [("failed", 0.2)] * 3
 
 
 def test_worker_that_keeps_asking_for_scope_escalates(tmp_path):

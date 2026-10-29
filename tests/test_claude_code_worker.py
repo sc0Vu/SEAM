@@ -7,10 +7,16 @@ import pytest
 from engine.git import GitRepo
 from engine.states import State
 from engine.task import Task, TaskSpec
+from engine.usage import Usage
 from sandbox.base import RunResult
 from tests.gitfixture import make_repo
 from workers import Worker, WorkerFailed
-from workers.claude_code import SCOPE_REQUEST_FILE, ClaudeCodeWorker, parse_result_json
+from workers.claude_code import (
+    SCOPE_REQUEST_FILE,
+    ClaudeCodeWorker,
+    parse_result_json,
+    usage_from_result,
+)
 
 
 def result_line(**kw):
@@ -108,3 +114,27 @@ def test_unparseable_output_fails_without_cost(worktree):
 def test_parse_skips_non_result_json():
     out = '{"type": "system"}\n' + result_line(result="ok") + "\nstderr tail\n"
     assert parse_result_json(out)["result"] == "ok"
+
+
+def test_usage_sums_every_model_and_rides_on_results_and_failures(worktree):
+    model_usage = {"modelUsage": {
+        "claude-sonnet-5-5": {"inputTokens": 10, "cacheReadInputTokens": 900,
+                              "cacheCreationInputTokens": 50, "outputTokens": 300},
+        "claude-haiku-5-5": {"inputTokens": 5, "outputTokens": 7},
+    }}
+    expected = Usage(15, 900, 50, 307)
+    assert usage_from_result(model_usage) == expected
+    sb = FakeClaudeSandbox(effect=lambda wd: (wd / "shout.py").write_text("S = 1\n"),
+                           line=result_line(**model_usage))
+    assert ClaudeCodeWorker("w1", "backend", sb).run(task(), worktree).usage == expected
+    with pytest.raises(WorkerFailed) as e:
+        failing = FakeClaudeSandbox(line=result_line(is_error=True, **model_usage))
+        ClaudeCodeWorker("w1", "backend", failing).run(task(), worktree)
+    assert e.value.usage == expected
+
+
+def test_usage_falls_back_to_top_level_usage():
+    data = {"usage": {"input_tokens": 3, "cache_read_input_tokens": 4,
+                      "cache_creation_input_tokens": 5, "output_tokens": 6}}
+    assert usage_from_result(data) == Usage(3, 4, 5, 6)
+    assert usage_from_result({}) == Usage()

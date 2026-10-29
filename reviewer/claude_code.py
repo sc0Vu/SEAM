@@ -15,7 +15,7 @@ from collections.abc import Callable
 
 from engine.errors import SeamError
 from reviewer.base import ReviewRequest, Verdict
-from workers.claude_code import parse_result_json
+from workers.claude_code import parse_result_json, usage_from_result
 
 _MAX_DIFF = 200_000
 
@@ -117,4 +117,5 @@ class ClaudeCodeReviewer:
         verdict = data.get("structured_output")
         if data.get("is_error") or not isinstance(verdict, dict) or "approve" not in verdict:
             raise ReviewFailed(f"no verdict from reviewer: {data.get('result')!r}")
-        return Verdict(bool(verdict["approve"]), str(verdict.get("notes", "")), cost)
+        return Verdict(bool(verdict["approve"]), str(verdict.get("notes", "")), cost,
+                       usage_from_result(data))
