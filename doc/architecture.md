@@ -555,3 +555,28 @@ with the host login and is unaffected.
 The isolation itself is tested against real containers
 (`test_real_proxy_reachable_only_from_the_internal_network`: health answers, other
 endpoints get 403, no route to the internet).
+
+---
+
+## 11. Proposed (not built): adversarial probe tests in review
+
+**Constraint served: review reliability (invariants 5, 6).** §8 measured that a single
+LLM review let a significant, test-passing bug through half the time: judgment alone
+is a probabilistic gate.
+
+**Design.** The reviewer stays tool-less. Its structured verdict gains `probes`: 1–3
+small pytest files targeting the riskiest behavior the spec implies (aliases,
+mutation, edge values, consistency between related APIs), written *even when it would
+approve*. The gate exports the branch, adds the probes under `seam_probes/`, and runs
+them in the sandbox (no network):
+- any probe fails → reject; the notes carry the failing test and its output, a
+  reproduction rather than an opinion;
+- all pass → the reviewer's verdict stands.
+
+Probes are never merged; they are review evidence, kept with the run. Python/pytest
+only at first (`probe_cmd` on the gate).
+
+**Risks and how they are measured.** A probe can encode a wrong expectation and reject
+correct work. Measure on bench-2: the two confirmed-buggy first versions (catch rate,
+vs 1/3 for single reviews) and their fixed versions (false-rejection rate), two
+reviews each.
