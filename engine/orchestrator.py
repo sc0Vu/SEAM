@@ -192,7 +192,10 @@ class Orchestrator:
         if not wt.stage_all():
             self.store.transition(task_id, Event.FAIL, review_notes="worker run changed nothing")
             return
-        wt.commit_staged(f"task {task_id}: {task.spec.description}")
+        # One git identity for everything SEAM commits; who wrote what is in the trailers.
+        wt.commit_staged(
+            f"task {task_id}: {task.spec.description}\n\n"
+            f"SEAM-Task: {task_id}\nSEAM-Worker: {worker_id}\nSEAM-Attempt: {task.attempts + 1}")
         diff = self.repo.diff(self.target, task.branch or "")
         self.store.transition(task_id, Event.SUBMIT, diff=diff)
 

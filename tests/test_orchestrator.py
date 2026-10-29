@@ -106,6 +106,13 @@ def test_v1_case1_disjoint_tasks_merge_in_parallel_zero_touch(tmp_path):
     assert {"shout.py", "count.py"} <= set(git(repo, "ls-tree", "--name-only", "main").split())
     assert main_tree_passes(repo)
     assert not (tmp_path / "worktrees" / f"task-{a.id}").exists()  # cleaned up
+    # One author throughout; the trailers say which worker wrote each task.
+    assert set(git(repo, "log", "--format=%an", "main~1..main").split("\n")) == {
+        "SEAM merge engine"}
+    for t in (a, b):
+        owner = store.get(t.id).owner
+        msgs = git(repo, "log", "--format=%B", "--grep", f"SEAM-Worker: {owner}", "main")
+        assert f"task {t.id}:" in msgs and f"Merge task {t.id}:" in msgs
 
 
 def test_v1_case2_semantic_conflict_escalates_never_merges_broken(tmp_path):

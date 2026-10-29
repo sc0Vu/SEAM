@@ -116,7 +116,8 @@ class MergeEngine:
         merge_sha = self.repo.commit_tree(
             trial.tree,
             [base, branch],
-            f"Merge task {task.id}: {task.spec.description}\n\nSEAM-Task: {task.id}",
+            f"Merge task {task.id}: {task.spec.description}\n\nSEAM-Task: {task.id}\n"
+            f"SEAM-Worker: {task.owner}",
         )
         with tempfile.TemporaryDirectory(prefix="seam-merge-", dir=self.scratch) as d:
             self.repo.export(merge_sha, Path(d))

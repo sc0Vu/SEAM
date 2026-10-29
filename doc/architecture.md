@@ -187,6 +187,12 @@ base_sha, merge_sha  (main before the merge; the merge commit — recorded befor
                       moves, cleared on each new `take`; see §6 crash-safety)
 ```
 
+**Commit identity.** SEAM makes every commit (agents never run git), all under one
+identity, `SEAM merge engine`. Who did what is in the message trailers: task commits
+carry `SEAM-Task`, `SEAM-Worker` and `SEAM-Attempt`; merge commits carry `SEAM-Task`
+and `SEAM-Worker` (the task's author). Separate them with
+`git log --grep 'SEAM-Worker: backend-2'`.
+
 **Run accounting** (`runs` table, `engine/usage.py`): one row per agent run against a
 task: `role` (worker | reviewer | gate — a review the deterministic checks decided,
 no model), `agent_id`, `outcome`, `cost_usd`, tokens split into uncached input,
