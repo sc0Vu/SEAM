@@ -2,8 +2,8 @@
 
 Merges are built without touching any working tree: `merge-tree --write-tree` makes
 the merged tree, `commit-tree` the merge commit, and `update-ref` publishes it with a
-compare-and-swap. Hooks are disabled on every call so no repository-supplied code
-runs on the host (invariant 10).
+compare-and-swap. Hooks and fsmonitor are disabled on every call so no
+repository-supplied code runs on the host (invariant 10).
 """
 
 from __future__ import annotations
@@ -41,7 +41,8 @@ class GitRepo:
 
     def _run(self, *args: str, input: bytes | None = None, env: dict | None = None):
         return subprocess.run(
-            ["git", "-C", str(self.path), "-c", "core.hooksPath=/dev/null", *args],
+            ["git", "-C", str(self.path), "-c", "core.hooksPath=/dev/null",
+             "-c", "core.fsmonitor=false", *args],
             input=input, capture_output=True,
             env={**os.environ, **env} if env else None,
         )
@@ -100,6 +101,24 @@ class GitRepo:
             elif line == f"branch refs/heads/{branch}":
                 trees.append(current)
         return trees
+
+    def diff(self, base: str, branch: str) -> str:
+        """Everything `branch` changed since it forked from `base` (`base...branch`)."""
+        return self._git("diff", "--no-color", "--no-ext-diff", f"{base}...{branch}")
+
+    def changed_files(self, base: str, branch: str) -> list[str]:
+        out = self._git("diff", "--name-only", "--no-renames", f"{base}...{branch}")
+        return [ln for ln in out.splitlines() if ln]
+
+    def stage_all(self) -> str:
+        """Stage every change in this (work)tree; return the staged diff ('' if none)."""
+        self._git("add", "-A")
+        return self._git("diff", "--cached", "--no-color", "--no-ext-diff")
+
+    def commit_staged(self, message: str) -> str:
+        """Commit what is staged in this (work)tree as SEAM; return the new HEAD."""
+        self._git("commit", "-q", "--no-verify", "-m", message, env=_IDENTITY)
+        return self.rev_parse("HEAD")
 
     def add_worktree(self, path: Path, branch: str, start: str) -> None:
         """Create a task's isolated worktree on a new `branch` from `start` (invariant 1)."""

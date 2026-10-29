@@ -70,3 +70,27 @@ def test_checked_out_in(repo, tmp_path):
 def test_unknown_ref_raises(repo):
     with pytest.raises(GitError):
         GitRepo(repo).rev_parse("nope")
+
+
+def test_diff_and_changed_files_are_branch_only(repo):
+    g = GitRepo(repo)
+    branch_with(repo, "t1", {"new.py": "N = 1\n", "a.py": "A = 2\n"})
+    # main moves on independently; three-dot diff must not include main's change.
+    branch_with(repo, "side", {"b.py": "B = 9\n"})
+    git(repo, "update-ref", "refs/heads/main", g.rev_parse("side"))
+    assert sorted(g.changed_files("main", "t1")) == ["a.py", "new.py"]
+    d = g.diff("main", "t1")
+    assert "+N = 1" in d and "B = 9" not in d
+
+
+def test_stage_and_commit_in_worktree(repo, tmp_path):
+    g = GitRepo(repo)
+    wt = tmp_path / "wt"
+    g.add_worktree(wt, "seam/task-1", "main")
+    w = GitRepo(wt)
+    assert w.stage_all() == ""
+    (wt / "c.py").write_text("C = 1\n")
+    assert "+C = 1" in w.stage_all()
+    head = w.commit_staged("task 1")
+    assert g.rev_parse("seam/task-1") == head
+    assert g.changed_files("main", "seam/task-1") == ["c.py"]
