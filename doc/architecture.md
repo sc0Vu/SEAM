@@ -37,7 +37,10 @@ worker runtime as pluggable.**
 - **Isolation = git worktrees** — one worktree + branch per in-flight task.
 - **Safety = a container sandbox** — all agent-written code and test runs execute in a
   container, never the host. A diff is data until it passes review + merge; its tests
-  are untrusted code.
+  are untrusted code. Behind one interface `Sandbox.run(cmd, workdir, timeout) ->
+  RunResult` (`sandbox/base.py`); v1 = `DockerSandbox`, a fresh `docker run --rm` per
+  command with only the work dir mounted, `--network none`, `--cap-drop ALL`,
+  `no-new-privileges`, and memory/pid caps.
 - **Product = coordinator + merge/review engine** — the novel IP.
 
 Rejected as *the architecture*: Claude Code agent teams and AgentScope — fine as
