@@ -29,8 +29,11 @@ worker runtime as pluggable.**
 
 - **Worker runtime = pluggable.** A worker is any headless coding agent that, given a
   task + a git worktree, returns a diff. Behind one interface
-  `Worker.run(task, worktree) -> diff`. v1 = Claude Code headless; alternates =
-  AgentScope `ReActAgent`, SWE-agent. No runtime specifics leak into the engine.
+  `Worker.run(task, worktree) -> WorkerResult` (`workers/base.py`), where the result
+  is exactly one of a `diff` or a `scope_request` (globs it needs outside its
+  file_scope — it stops rather than editing them, §5). v1 = Claude Code headless;
+  alternates = AgentScope `ReActAgent`, SWE-agent. No runtime specifics leak into the
+  engine.
 - **Isolation = git worktrees** — one worktree + branch per in-flight task.
 - **Safety = a container sandbox** — all agent-written code and test runs execute in a
   container, never the host. A diff is data until it passes review + merge; its tests
