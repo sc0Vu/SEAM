@@ -70,6 +70,8 @@ def test_command_is_headless_sandboxed_and_scoped():
         assert flag in argv
     assert argv[argv.index("--max-budget-usd") + 1] == "2"
     assert argv[argv.index("--model") + 1] == "m"
+    assert set(argv[argv.index("--tools") + 1].split(",")) == {
+        "Bash", "Edit", "Glob", "Grep", "Read", "Write"}
     prompt = argv[2]
     assert "shout.py, test_shout.py" in prompt and SCOPE_REQUEST_FILE in prompt
     assert "REJECTED" not in prompt

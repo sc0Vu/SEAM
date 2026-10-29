@@ -18,6 +18,10 @@ from sandbox.base import Sandbox
 from workers.base import WorkerFailed, WorkerResult
 
 SCOPE_REQUEST_FILE = ".seam-scope-request"
+# What a worker needs to edit and test code. Web, sub-agent and notebook tools are left
+# out: the credential proxy would refuse their traffic anyway, and every tool's
+# definition is resent on every request.
+WORKER_TOOLS = ("Bash", "Edit", "Glob", "Grep", "Read", "Write")
 
 _PROMPT = """\
 You are a SEAM worker. Implement exactly ONE task in this repository (the current
@@ -121,6 +125,9 @@ class ClaudeCodeWorker:
             self.claude, "-p", self.prompt(task),
             "--output-format", "json",
             "--dangerously-skip-permissions",  # safe only because we are in the sandbox
+            "--tools", ",".join(WORKER_TOOLS),
+            "--disable-slash-commands",
+            "--strict-mcp-config",
             "--no-session-persistence",
             "--max-budget-usd", str(self.max_budget_usd),
         ]

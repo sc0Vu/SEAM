@@ -350,6 +350,25 @@ same file_scopes and could never be claimed).
 
 ---
 
+**Token use (2026-10-30, case 1, `--workers 2`, warm cache, single runs).** Measured
+with the `runs` table:
+
+| | before | after |
+|---|---|---|
+| worker input tokens, 2 runs | 85.6k (99% cache reads) | 47.0k (98%) |
+| worker cost | $0.024 | $0.020 |
+| reviewer cost, 2 reviews (Opus 5.5) | $0.059 | $0.027 |
+| total | $0.08 | $0.05 |
+
+Changes: workers get only `Bash, Edit, Glob, Grep, Read, Write` (no web, sub-agent or
+notebook tools, whose definitions were resent on every request); the reviewer's rules
+became its whole system prompt, with host settings, plugins and MCP not loaded. The
+first run after either change pays a one-time cache write (that run cost $0.11). The
+reviewer still approved a correct diff and rejected a planted `.upper()`→`.lower()`
+bug. Caveman was evaluated and not adopted: its output-voice saving is small for
+code-heavy runs, its log compression targets large outputs the greeter lacks, and
+its cloud features would send model traffic to a third party past the proxy.
+
 ## 9. Risks
 - **Semantic merge is unsolved in general** — escalation is a feature; the lever is
   decomposition/contract quality, not a cleverer merger.
@@ -409,8 +428,11 @@ attempts nothing else. The stub returned 401, so no request reached Anthropic.
 **End to end (2026-10-30):** greeter case 1 with `--workers 2` through the proxy:
 both tasks `merged`, zero touch, main suite green (10 passed), no requests refused,
 proxy container removed afterwards. Reported cost $0.22, against $0.08 for the same
-case without the proxy; one run each, so whether the proxy affects cost (e.g. prompt
-caching) is **unverified**. A worker task that needs other endpoints (web fetch, MCP)
+case without the proxy. With per-run token recording, later runs through the proxy
+show a 98–99% prompt-cache hit rate for workers, so the proxy does not defeat
+caching; the likely cause of the $0.22 is a one-time cache write, since any change to
+the worker's prompt prefix (here the env) makes the first run re-cache it, as seen
+again after the tool change below. A worker task that needs other endpoints (web fetch, MCP)
 would now be refused; none of the greeter tasks did.
 
 **What it fixes.** The credential never enters a worker container. Workers lose all
