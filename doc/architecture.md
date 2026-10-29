@@ -312,9 +312,24 @@ add worker types, Postgres, the architect role, the scope-expansion UX polish, a
 **Status.** Engine-level regression tests for both cases pass with scripted workers
 and an inspect-only fake sandbox (`tests/test_orchestrator.py`, `test_v1_case*`). The
 real-runtime run (Claude Code workers in Docker, Claude Code reviewer) is
-`examples/greeter`; its results are **unverified** until it has been run and recorded
-here. The greeter repo is a toy: passing it proves the mechanism, not the escalation
-rate. The v1 lead is a hand-written plan (`coordinator/lead.py`); its budget is per
+`examples/greeter`. The greeter repo is a toy: passing it proves the mechanism, not the
+escalation rate.
+
+**Real-runtime results (2026-10-30, greeter, `--workers 1`, default model, OAuth auth;
+cost is Claude Code's reported `total_cost_usd`, single runs, not a benchmark):**
+
+| case | outcome | attempts | reported cost |
+|---|---|---|---|
+| 1 happy path | both tasks `merged`, zero human touch; main suite green (11 passed) | 0 rejections | $0.08 |
+| 2 escalation | rename `merged`; `farewell` → `needs_human` (merge-time suite: `cannot import name 'greet'`); main never broken (2 passed) | rename rejected once (bytecode, see below) | $0.21 |
+
+Both v1 success criteria were met once each. Not yet shown on the real runtime:
+parallel workers (`--workers 2`; parallelism is covered only by the engine tests), and
+any repeat-rate or escalation-rate figure. The first case-1 attempt exposed a bug:
+`git add -A` staged `__pycache__/` written by the worker's own test runs, which the
+gate rejected as out-of-scope edits; fixed by `ARTIFACT_EXCLUDES` (§5). Branches
+committed before that fix cannot drop the bytecode (deletions are excluded too) and
+need a fresh run. The v1 lead is a hand-written plan (`coordinator/lead.py`); its budget is per
 `run` invocation, in memory.
 
 ---
