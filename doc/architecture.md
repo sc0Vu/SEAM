@@ -618,7 +618,7 @@ original-code behavior it asserts.
 
 ---
 
-## 12. The AI lead (LLM planner) — built, not yet measured
+## 12. The AI lead (LLM planner) — built; first plan run
 
 **Constraint served: invariant 7, and an honest benchmark.** The v1 lead executes a
 hand-written plan, so every escalation rate so far measures its author's planning.
@@ -661,3 +661,33 @@ carried into `run`.
 plans with the hand-written ones (tasks, scopes, deps); then run its plans unedited
 and record merged / needs_human — the first escalation rate not produced by the
 author's own planning.
+
+**First LLM-planned run (2026-10-30, bench-2's goal in prose, `~/seam-demo/bench3`).**
+The planner ($0.07) produced 2 tasks: `omd_setlist` (dictutils + tests + docs) and
+`url_query_edit` (`replace_query_param` + `remove_query_params`, blocked by
+`omd_setlist`). It found unaided that `QueryParamDict` inherits `dictutils`' class and
+that urlutils' vendored OMD copy is only a fallback, and told the URL worker not to
+touch it. One gap: each task's `test_cmd` omitted `--doctest-modules` while the merge
+suite runs doctests. Run unedited, `--workers 2`:
+
+| result | value |
+|---|---|
+| merged / needs_human | **2 / 0**, no review rejections |
+| master | 782 passed (doctests included); vendored OMD untouched |
+| cost | $0.47 (workers $0.16, reviewer $0.31) + $0.07 planning |
+
+**But master now carries two real bugs**, both confirmed by running them in the
+sandbox afterwards, both invisible to the worker's tests, the review and the merge
+suite: `remove_query_params`/`replace_query_param` return a URL whose `to_text()` is
+updated while `qp`/`query_params` still hold the original values (the reviewer
+approved with an incorrect explanation of why it was fine); and `setlist(nan, [9])`
+leaves the dict unchanged, silently dropping the new value. They are the same two
+defect classes bench-2's reviewer caught only some of the time.
+
+Reading: the planner's decomposition was sound and the doctest gap did not bite; the
+weak point is again the gate, not the plan. **Escalation rate is not the whole
+metric**: a run can merge everything and still ship defects the tests do not assert.
+The project needs a silent-defect check (behavioral probes run after the fact, as
+here) alongside merged / needs_human, and a stronger gate (§11's probes, which
+caught both defect classes, need a false-rejection fix first).
+
