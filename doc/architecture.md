@@ -132,8 +132,9 @@ WHERE id = (
                     JOIN tasks p ON p.id=b WHERE p.state <> 'merged')
     AND NOT EXISTS (SELECT 1 FROM tasks x
                     WHERE x.state IN ('claimed','in_progress','scope_requested',
-                                      'in_review','queued_for_merge','merging')
-                      AND x.file_scope && t.file_scope)   -- overlap
+                                      'submitted','in_review','approved','blocked',
+                                      'queued_for_merge','merging','needs_human')
+                      AND overlaps(x.file_scope, t.file_scope))  -- glob test, below
   ORDER BY t.priority DESC, t.id ASC
   LIMIT 1 FOR UPDATE SKIP LOCKED
 ) RETURNING *;
@@ -142,6 +143,12 @@ WHERE id = (
 file_scope non-overlap check is the conflict-prevention core: two in-flight workers
 never touch the same files, so most merges are trivial. (v1 sqlite is valid only while
 a single orchestrator process is the sole writer.)
+
+**v1 implementation** (`store/sqlite.py`): the SQL above is the Postgres target. In
+sqlite the claim is a read-check-write inside one `BEGIN IMMEDIATE` transaction, with
+the scope-holding set from §3 and the glob overlap
+test below. The single `merging` slot is also enforced by the database itself: a
+partial unique index on `state WHERE state='merging'` rejects a second `take`.
 
 **Scope granularity + the chicken-and-egg.** The lead can't perfectly predict exact
 files for a new feature, so **file_scope is declared at module/directory granularity**
