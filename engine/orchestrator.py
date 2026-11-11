@@ -80,9 +80,6 @@ class Orchestrator:
         self.merger = merger
         self.worktree_root = Path(worktree_root)
         self.target = target
-        # Denied scope requests, retried as merges free scope. In memory only: after a
-        # restart a blocked task waits for the lead (or a human) to unblock it.
-        self._pending_scope: dict[int, list[str]] = {}
 
     def run(self) -> RunReport:
         self.merger.recover()
@@ -184,9 +181,8 @@ class Orchestrator:
             asked = self.store.transition(task_id, Event.REQUEST_SCOPE, **notes)
             if asked.state is State.NEEDS_HUMAN:
                 return
-            ruled = self.lead.decide_scope(task_id, list(result.scope_request))
-            if ruled.state is State.BLOCKED:
-                self._pending_scope[task_id] = list(result.scope_request)
+            # A denial is stored with the task and retried by `_retry_blocked`.
+            self.lead.decide_scope(task_id, list(result.scope_request))
             return
         task = self.store.get(task_id)
         wt = GitRepo(task.worktree_path or "")
@@ -225,11 +221,11 @@ class Orchestrator:
         return getattr(getattr(self.gate, "reviewer", None), "id", "reviewer")
 
     def _retry_blocked(self) -> None:
-        for task_id, globs in list(self._pending_scope.items()):
-            if self.store.get(task_id).state is not State.BLOCKED:
-                del self._pending_scope[task_id]
-            elif self.lead.decide_scope(task_id, globs).state is State.IN_PROGRESS:
-                del self._pending_scope[task_id]
+        """Re-ask the lead for every denied scope request (stored with the task, so
+        this includes requests denied before a restart); merges may have freed it."""
+        for t in self.store.list(State.BLOCKED):
+            if t.pending_scope:
+                self.lead.decide_scope(t.id, list(t.pending_scope))
 
     # -- merge ---------------------------------------------------------------
 

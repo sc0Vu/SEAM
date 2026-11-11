@@ -41,7 +41,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     review_notes  TEXT    NOT NULL DEFAULT '',
     diff          TEXT    NOT NULL DEFAULT '',
     base_sha      TEXT,                          -- main before this merge
-    merge_sha     TEXT                           -- the merge commit, recorded pre-publish
+    merge_sha     TEXT,                          -- the merge commit, recorded pre-publish
+    pending_scope TEXT    NOT NULL DEFAULT '[]'  -- JSON globs of a denied scope request
 );
 -- Invariant 4 enforced by the database itself: at most one row may be `merging`.
 CREATE UNIQUE INDEX IF NOT EXISTS one_merging ON tasks(state) WHERE state = 'merging';
@@ -198,6 +199,8 @@ class TaskStore:
         From `scope_requested`: grant -> `in_progress`, or deny -> `blocked`.
         From `blocked` (the lead retrying a denied request): grant -> `in_progress`
         (`unblock`), or leave the task `blocked` and unchanged if it still clashes.
+        A denied request is stored as the task's `pending_scope`, so it is retried
+        after a restart too, and cleared once granted.
         """
         with self._tx() as db:
             task = self.get(task_id)
@@ -218,9 +221,11 @@ class TaskStore:
                 event = Event.DENY_SCOPE if clash else Event.GRANT_SCOPE
             new_state, attempts = next_state(task.state, event, task.attempts, self.max_attempts)
             scope = task.spec.file_scope if clash else new_scope
+            pending = list(extra_globs) if clash else []
             cur = db.execute(
-                "UPDATE tasks SET state = ?, file_scope = ? WHERE id = ? AND state = ?",
-                (new_state, json.dumps(list(scope)), task_id, task.state),
+                "UPDATE tasks SET state = ?, file_scope = ?, pending_scope = ?"
+                " WHERE id = ? AND state = ?",
+                (new_state, json.dumps(list(scope)), json.dumps(pending), task_id, task.state),
             )
             if cur.rowcount != 1:
                 raise StaleState(task_id)
@@ -262,6 +267,10 @@ class TaskStore:
         for col in ("notes", "probes"):
             if col not in cols:
                 self._db.execute(f"ALTER TABLE runs ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
+        task_cols = {r["name"] for r in self._db.execute("PRAGMA table_info(tasks)")}
+        if "pending_scope" not in task_cols:
+            self._db.execute(
+                "ALTER TABLE tasks ADD COLUMN pending_scope TEXT NOT NULL DEFAULT '[]'")
 
     def record_run(self, run: RunRecord) -> None:
         """Append one agent run's cost and tokens (accounting only; no state change)."""
@@ -327,4 +336,5 @@ def _to_task(row: sqlite3.Row) -> Task:
         diff=row["diff"],
         base_sha=row["base_sha"],
         merge_sha=row["merge_sha"],
+        pending_scope=tuple(json.loads(row["pending_scope"])),
     )

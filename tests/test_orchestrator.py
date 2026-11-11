@@ -17,7 +17,7 @@ from coordinator.lead import Budget, Lead
 from engine.git import GitRepo
 from engine.merge import MergeEngine
 from engine.orchestrator import Orchestrator
-from engine.states import State
+from engine.states import Event, State
 from engine.task import TaskSpec
 from reviewer.base import ReviewRequest, Verdict
 from reviewer.gate import ReviewGate
@@ -282,3 +282,25 @@ def test_review_probes_are_recorded_with_the_run(tmp_path):
     orch.run()
     review = next(r for r in store.runs(t.id) if r.role == "reviewer")
     assert json.loads(review.probes) == [{"name": "test_probe_a.py", "code": probe.code}]
+
+
+def test_scope_request_denied_before_a_restart_is_retried(tmp_path):
+    """Run 1 left `asker` blocked on a denied request for shared.py; the holder was
+    then cancelled. A fresh orchestrator (a restart) must retry the stored request,
+    not leave the task blocked forever."""
+    w = ScriptedWorker("w1", {"asker": writes({"mine.py": "", "shared.py": "X = 1\n"})})
+    repo, store, _, orch = build(tmp_path, [w])  # its in-memory state knows nothing
+    h = add(store, "holder", ["shared.py"])
+    a = add(store, "asker", ["mine.py"])
+    store.claim("w9", "backend")
+    store.claim("w1", "backend")
+    path = tmp_path / "worktrees" / f"task-{a.id}"
+    GitRepo(repo).add_worktree(path, f"seam/task-{a.id}", "main")
+    store.transition(a.id, Event.START, branch=f"seam/task-{a.id}", worktree_path=str(path))
+    store.transition(a.id, Event.REQUEST_SCOPE)
+    assert store.grant_scope(a.id, ["shared.py"]).state is State.BLOCKED
+    store.transition(h.id, Event.CANCEL)
+
+    report = orch.run()
+    assert report.ids_in(State.MERGED) == [a.id]
+    assert store.get(a.id).spec.file_scope == ("mine.py", "shared.py")

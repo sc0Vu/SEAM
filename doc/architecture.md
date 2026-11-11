@@ -102,8 +102,8 @@ orchestrator, and the diff stored at submit is git's (`target...branch`), not th
 worker's. It stops when nothing is running and nothing can start (done, escalated,
 blocked, or budget spent). The lead's budget is checked before every new agent run;
 runs already in flight may overshoot it by at most one run each.
-Denied scope requests are remembered in memory only; after a restart a blocked task
-waits for the lead or a human.
+Denied scope requests are stored with the task (`pending_scope`), and every pass
+retries all `blocked` tasks' requests, so a restart picks them up too.
 
 **Review gate** (`reviewer/gate.py`) — deterministic checks before any model is paid:
 reviewer ≠ author, non-empty diff, every changed path inside file_scope, the task's
@@ -185,7 +185,9 @@ blocked_by[]  (task ids that must be merged first), priority,
 state, owner, branch, worktree_path, test_cmd,
 attempts (review/merge bounces so far), review_notes, diff,
 base_sha, merge_sha  (main before the merge; the merge commit — recorded before main
-                      moves, cleared on each new `take`; see §6 crash-safety)
+                      moves, cleared on each new `take`; see §6 crash-safety),
+pending_scope[]  (globs of a denied scope request, kept while the task is `blocked`
+                  so it is retried even after a restart; cleared when granted)
 ```
 
 **Commit identity.** SEAM makes every commit (agents never run git), all under one

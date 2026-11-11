@@ -37,3 +37,4 @@ class Task:
     diff: str = ""
     base_sha: str | None = None
     merge_sha: str | None = None
+    pending_scope: tuple[str, ...] = ()  # a denied scope request, retried while blocked

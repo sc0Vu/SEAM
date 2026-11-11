@@ -209,3 +209,54 @@ def test_blocked_task_unblocks_once_scope_frees(store):
     store.transition(b.id, Event.CANCEL)
     freed = store.grant_scope(a.id, ["b/y.py"])
     assert (freed.state, freed.spec.file_scope) == (State.IN_PROGRESS, ("a/**", "b/y.py"))
+
+
+def test_denied_scope_request_is_stored_until_granted(tmp_path):
+    path = tmp_path / "s.sqlite"
+    s = TaskStore(path)
+    a = s.create(spec(["a/**"]))
+    b = s.create(spec(["b/**"]))
+    s.claim("w1", "backend")
+    s.claim("w2", "backend")
+    s.transition(a.id, Event.START)
+    s.transition(a.id, Event.REQUEST_SCOPE)
+    assert s.grant_scope(a.id, ["b/y.py"]).pending_scope == ("b/y.py",)
+    s.close()
+
+    # A restart (a new store on the same file) still knows what was asked for.
+    s = TaskStore(path)
+    assert s.get(a.id).pending_scope == ("b/y.py",)
+    assert s.grant_scope(a.id, ["b/y.py"]).pending_scope == ("b/y.py",)  # still clashes
+    s.transition(b.id, Event.CANCEL)
+    freed = s.grant_scope(a.id, ["b/y.py"])
+    assert (freed.state, freed.pending_scope) == (State.IN_PROGRESS, ())
+    s.close()
+
+
+def test_granted_request_leaves_nothing_pending(store):
+    a = store.create(spec(["a/**"]))
+    store.claim("w1", "backend")
+    store.transition(a.id, Event.START)
+    store.transition(a.id, Event.REQUEST_SCOPE)
+    assert store.grant_scope(a.id, ["c/x.py"]).pending_scope == ()
+
+
+def test_old_task_table_gains_pending_scope(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "old.sqlite"
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, goal_id TEXT"
+               " NOT NULL, type TEXT NOT NULL, description TEXT NOT NULL, spec_ref TEXT NOT"
+               " NULL DEFAULT '', file_scope TEXT NOT NULL, blocked_by TEXT NOT NULL DEFAULT"
+               " '[]', priority INTEGER NOT NULL DEFAULT 0, state TEXT NOT NULL DEFAULT"
+               " 'open', owner TEXT, branch TEXT, worktree_path TEXT, test_cmd TEXT NOT NULL"
+               " DEFAULT '', attempts INTEGER NOT NULL DEFAULT 0, review_notes TEXT NOT NULL"
+               " DEFAULT '', diff TEXT NOT NULL DEFAULT '', base_sha TEXT, merge_sha TEXT)")
+    db.execute("INSERT INTO tasks (goal_id, type, description, file_scope)"
+               " VALUES ('g1', 'backend', 'd', '[\"a/**\"]')")
+    db.commit()
+    db.close()
+    s = TaskStore(path)
+    assert s.get(1).pending_scope == ()
+    s.close()
