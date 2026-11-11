@@ -548,10 +548,22 @@ would now be refused; none of the greeter tasks did.
 egress except the model API, so they can't exfiltrate the repo to third parties or
 download dependencies at run time (the image must carry them).
 
-**What it does not fix.** A compromised worker can still make arbitrary model calls
-through the proxy, spending quota until its run is killed (bounded by the run timeout
-and `--max-budget-usd`, which the worker itself enforces, so not trusted). A later
-step can have the proxy meter tokens per run and cut off at a cap. Data sent to the
+**Token cap (built).** The proxy meters the `usage` each `/v1/messages` response
+reports (plain JSON, or an SSE stream's `message_start` updated by each cumulative
+`message_delta`) and refuses generation with 429 once the cap is spent;
+`count_tokens` is free and stays open. Metered tokens = uncached input + cache writes
++ output + cache reads ÷ 10 (their price ratio). The proxy drops the client's
+`Accept-Encoding`, so responses stay uncompressed and readable. A request is checked
+before it is forwarded and charged when its response ends (also when the client
+hangs up), so the cap is overshot by at most the requests in flight when it is hit. One
+cap covers every agent on the proxy: `run --token-cap` (default 2,000,000) and
+`plan --token-cap` (500,000). The defaults are headroom, not measured limits: the
+recorded runs metered ≈ 92k for all 8 bench-1 workers and ≤ 31k for any one worker
+run (computed from the `runs` table). `run` prints the proxy's total.
+
+**What it does not fix.** A compromised worker can still make model calls through the
+proxy up to the token cap (and its run's timeout and `--max-budget-usd`, which the
+worker itself enforces, so not trusted). Data sent to the
 model API still leaves the machine, as it does today. The reviewer runs on the host
 with the host login and is unaffected.
 

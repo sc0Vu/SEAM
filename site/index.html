@@ -160,7 +160,7 @@ footer { border-top: 1px solid var(--line); padding: 28px 0 48px; color: var(--m
       <div class="card"><h3>Agents never run git</h3><p>SEAM stages and commits their edits with git hooks disabled; a worktree's <code>.git</code> is mounted read-only.</p></div>
       <div class="card"><h3>A reviewer with no tools</h3><p>The reviewer reads the spec, the diff and the original files and returns a verdict. It cannot execute or edit anything.</p></div>
     </div>
-    <p style="margin-top:16px;color:var(--muted)">Not covered yet: a compromised agent can still spend model quota through the proxy until its run's time and budget caps end it.</p>
+    <p style="margin-top:16px;color:var(--muted)">The proxy also meters every response's token usage and refuses generation once the run's token cap is spent, so a compromised agent can spend quota only up to that cap.</p>
   </div>
 </section>
 

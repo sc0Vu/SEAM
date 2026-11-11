@@ -2,12 +2,19 @@
 
 import http.client
 import ipaddress
+import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from sandbox.proxy import CREDENTIAL_KINDS, HEALTH_PATH, serve
+from sandbox.proxy import (
+    CREDENTIAL_KINDS,
+    HEALTH_PATH,
+    metered_tokens,
+    response_usage,
+    serve,
+)
 
 OAUTH = CREDENTIAL_KINDS["CLAUDE_CODE_OAUTH_TOKEN"]
 API_KEY = CREDENTIAL_KINDS["ANTHROPIC_API_KEY"]
@@ -20,6 +27,8 @@ class Upstream:
     def __init__(self):
         self.requests: list[tuple[str, str, dict, bytes]] = []
         self.release = threading.Event()
+        self.body = b'{"ok": true}'
+        self.stream_parts = (b"event: one\n\n", None, b"event: two\n\n")  # None: wait
         up = self
 
         class H(BaseHTTPRequestHandler):
@@ -32,7 +41,7 @@ class Upstream:
                     self.send_response(200)
                     self.send_header("transfer-encoding", "chunked")
                     self.end_headers()
-                    for part in (b"event: one\n\n", None, b"event: two\n\n"):
+                    for part in up.stream_parts:
                         if part is None:
                             up.release.wait(5)
                             continue
@@ -41,7 +50,7 @@ class Upstream:
                     self.wfile.write(b"0\r\n\r\n")
                     return
                 status = 429 if "busy" in self.path else 200
-                out = b'{"ok": true}'
+                out = up.body
                 self.send_response(status)
                 self.send_header("content-length", str(len(out)))
                 self.send_header("request-id", "req_1")
@@ -156,4 +165,68 @@ def test_clients_outside_the_allowed_networks_are_refused(upstream):
     resp = call(proxy, "POST", "/v1/messages", body=b"{}")
     assert resp.status == 403
     assert upstream.requests == []
+    proxy.shutdown()
+
+
+# -- token cap -----------------------------------------------------------------
+
+USAGE = {"input_tokens": 10, "cache_creation_input_tokens": 100,
+         "cache_read_input_tokens": 1000, "output_tokens": 5}  # metered: 10+100+5+100
+
+
+def test_metered_tokens_weights_cache_reads_at_a_tenth():
+    assert metered_tokens(USAGE) == 215
+    assert metered_tokens({"cache_read_input_tokens": 1}) == 1  # rounds up, never free
+    assert metered_tokens({"input_tokens": -5, "output_tokens": "9"}) == 0  # junk ignored
+
+
+def test_usage_from_json_and_from_a_stream():
+    assert response_usage(json.dumps({"usage": USAGE}).encode()) == USAGE
+    sse = (
+        "event: message_start\n"
+        f'data: {json.dumps({"type": "message_start", "message": {"usage": USAGE}})}\n\n'
+        "event: content_block_delta\ndata: {\"type\": \"content_block_delta\"}\n\n"
+        'data: {"type": "message_delta", "usage": {"output_tokens": 40}}\n\n'
+        'data: {"type": "message_delta", "usage": {"output_tokens": 90}}\n\n'
+    ).encode()
+    assert response_usage(sse) == {**USAGE, "output_tokens": 90}  # cumulative, not summed
+    assert response_usage(b'{"type": "error"}') is None
+    assert response_usage(b"garbage") is None
+
+
+def test_cap_refuses_generation_once_spent(upstream):
+    upstream.body = json.dumps({"usage": USAGE}).encode()
+    server = serve(OAUTH, SECRET, ("127.0.0.1", 0), upstream.url, token_cap=400)
+    threading.Thread(target=server.serve_forever, args=(0.02,), daemon=True).start()
+    assert call(server, "POST", "/v1/messages", body=b"{}").status == 200  # 215
+    assert call(server, "POST", "/v1/messages", body=b"{}").status == 200  # 430 >= 400
+    refused = call(server, "POST", "/v1/messages", body=b"{}")
+    assert refused.status == 429 and b"token cap 400" in refused.read()
+    assert len(upstream.requests) == 2  # the refused request never left the proxy
+    # Token counting is free and stays available.
+    assert call(server, "POST", "/v1/messages/count_tokens", body=b"{}").status == 200
+    server.shutdown()
+
+
+def test_streamed_usage_is_charged(upstream):
+    sse = ('data: ' + json.dumps({"type": "message_start", "message": {"usage": USAGE}})
+           + '\n\n').encode()
+    upstream.stream_parts = (sse, None, b'data: {"type": "message_delta", '
+                             b'"usage": {"output_tokens": 300}}\n\n')
+    upstream.body = json.dumps({"usage": USAGE}).encode()  # the later, non-stream calls
+    server = serve(OAUTH, SECRET, ("127.0.0.1", 0), upstream.url, token_cap=600)
+    threading.Thread(target=server.serve_forever, args=(0.02,), daemon=True).start()
+    upstream.release.set()
+    call(server, "POST", "/v1/messages?stream=1", body=b"{}").read()  # 10+100+300+100
+    assert call(server, "POST", "/v1/messages", body=b"{}").status == 200  # 510 < 600
+    assert call(server, "POST", "/v1/messages", body=b"{}").status == 429
+    server.shutdown()
+
+
+def test_accept_encoding_is_dropped_so_usage_stays_readable(upstream):
+    proxy = start_proxy(upstream)
+    call(proxy, "POST", "/v1/messages", body=b"{}",
+         headers={"Accept-Encoding": "gzip, br"}).read()
+    sent = {k.lower(): v for k, v in upstream.requests[0][2].items()}
+    assert sent.get("accept-encoding", "identity") == "identity"  # no compression
     proxy.shutdown()

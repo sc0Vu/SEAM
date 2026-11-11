@@ -175,6 +175,19 @@ def test_proxy_creates_internal_network_and_holds_credential_by_name():
     assert proxy.refused() == ["seam-proxy: refused GET /v1/models: not an allowed endpoint"]
 
 
+def test_proxy_token_cap_reaches_the_proxy_and_its_total_is_read_back():
+    capped = CredentialProxyContainer("ANTHROPIC_API_KEY", runner=FakeDocker(),
+                                      token_cap=1234)
+    argv = capped.argv(["10.0.0.0/8"])
+    assert argv[argv.index("--token-cap") + 1] == "1234"
+    assert "--token-cap" not in CredentialProxyContainer(
+        "ANTHROPIC_API_KEY", runner=FakeDocker()).argv(["10.0.0.0/8"])
+    assert capped.metered() is None  # nothing logged yet
+    capped.log = ("seam-proxy: metered 5 tokens (total 5 of 1234)\n"
+                  "seam-proxy: metered 7 tokens (total 12 of 1234)\n")
+    assert capped.metered() == 12
+
+
 def test_worker_env_has_placeholder_and_proxy_url_only():
     proxy = CredentialProxyContainer("ANTHROPIC_API_KEY", runner=FakeDocker())
     env = proxy.worker_env()

@@ -127,13 +127,15 @@ def cmd_plan(args: argparse.Namespace) -> None:
     scratch = args.state_dir / "tmp"
     with tempfile.TemporaryDirectory(prefix="seam-plan-", dir=scratch) as d:
         repo.export(repo.rev_parse(args.target), Path(d))
-        with CredentialProxyContainer(credential, args.image) as proxy:
+        with CredentialProxyContainer(credential, args.image,
+                                      token_cap=args.token_cap) as proxy:
             check_proxy(proxy, args.image, scratch)
             box = DockerSandbox(args.image, network=proxy.network,
                                 env_values=proxy.worker_env(), user=host_user())
             planner = ClaudeCodePlanner(box, model=args.model, max_budget_usd=args.budget_usd)
             print(f"planning on {args.repo}@{args.target} (cap ${args.budget_usd:.2f})")
             draft = planner.plan(args.goal, Path(d))
+    _report_proxy(proxy)
     out.write_text(plan_to_json(draft, args.goal))
     by_key = {t["key"]: t for t in draft.plan.tasks}
     for t in draft.plan.tasks:
@@ -157,9 +159,18 @@ def cmd_run(args: argparse.Namespace) -> None:
         cmd_add_goal(args)
     store = _store(args.state_dir)
     scratch = args.state_dir / "tmp"
-    with CredentialProxyContainer(credential, args.image) as proxy:
+    with CredentialProxyContainer(credential, args.image,
+                                  token_cap=args.token_cap) as proxy:
         check_proxy(proxy, args.image, scratch)
         _run_team(args, store, repo, tests, scratch, proxy)
+    _report_proxy(proxy)
+
+
+def _report_proxy(proxy: CredentialProxyContainer) -> None:
+    """What the workers drew through the proxy, and anything it refused."""
+    if proxy.metered() is not None:
+        cap = f"{proxy.token_cap:,}" if proxy.token_cap is not None else "none"
+        print(f"proxy: {proxy.metered():,} metered tokens (cap {cap})")
     for line in proxy.refused():
         print(f"warning: {line}")
 
@@ -266,6 +277,8 @@ def parser() -> argparse.ArgumentParser:
     pl.add_argument("--image", default=DEFAULT_IMAGE)
     pl.add_argument("--model")
     pl.add_argument("--budget-usd", type=float, default=1.0, help="ceiling for planning")
+    pl.add_argument("--token-cap", type=int, default=500_000,
+                    help="metered tokens the credential proxy forwards (doc §10)")
     pl.set_defaults(func=cmd_plan)
 
     g = sub.add_parser("add-goal", help="load a plan's tasks into the store")
@@ -283,6 +296,9 @@ def parser() -> argparse.ArgumentParser:
     r.add_argument("--workers", type=int, default=2, help="workers per task type")
     r.add_argument("--budget-usd", type=float, default=5.0, help="ceiling for the goal")
     r.add_argument("--run-budget-usd", type=float, default=1.0, help="ceiling per worker run")
+    r.add_argument("--token-cap", type=int, default=2_000_000,
+                   help="metered tokens the credential proxy forwards for all workers "
+                        "of this run, enforced outside the agents (doc §10)")
     r.add_argument("--suite-cmd", default="python -m pytest -q", help="the FULL suite")
     r.add_argument("--image", default=DEFAULT_IMAGE)
     r.add_argument("--model")

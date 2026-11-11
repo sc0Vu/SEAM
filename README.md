@@ -62,8 +62,12 @@ the project rules are in [CLAUDE.md](CLAUDE.md).
 - **The reviewer has no tools**: it reads the spec, the diff and the original files
   and returns a verdict; it cannot execute or edit anything.
 
+- **The proxy caps tokens** (`--token-cap`): it meters the usage every model response
+  reports and refuses generation once the run's cap is spent, a limit the agents
+  cannot lift.
+
 What it does *not* protect against: a compromised agent can still spend model quota
-through the proxy until its run's time and budget caps end it.
+through the proxy up to that cap.
 
 ## Requirements
 
@@ -123,8 +127,9 @@ All take `--state-dir` (default `./.seam`). Useful `run` options:
 |---|---|---|
 | `--target` | `main` | the branch SEAM merges into |
 | `--workers` | 2 | workers per task type |
-| `--budget-usd` | 5 | ceiling for the whole run; no new agent run starts once it is spent |
+| `--budget-usd` | 5 | ceiling for the goal, including earlier runs of it; no new agent run starts once it is spent |
 | `--run-budget-usd` | 1 | ceiling per worker run |
+| `--token-cap` | 2,000,000 | metered tokens the credential proxy forwards for all workers of the run (cache reads count a tenth) |
 | `--suite-cmd` | `python -m pytest -q` | the FULL suite run on every merged tree |
 | `--model`, `--reviewer-model` | Claude Code's default | models for workers / reviewer |
 | `--review-context` | `whole` | `focused` sends large files as an outline plus the code the diff touches (cheaper, less tested) |

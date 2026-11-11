@@ -5,7 +5,9 @@ and `ANTHROPIC_BASE_URL` pointing here (doc/architecture.md §10). This proxy fo
 `POST /v1/messages` (and its `count_tokens`) to the real API with the placeholder auth
 header replaced by the real one, refuses every other request, and streams responses unbuffered. So a
 prompt-injected worker can neither read the credential nor reach any other host
-(invariants 10 and 13).
+(invariants 10 and 13). With a token cap, it meters the usage every model response
+reports and refuses new requests once the cap is spent, so a compromised worker
+cannot burn quota without limit.
 
 Stdlib only and free of SEAM imports: the CLI mounts this one file read-only into a
 container and runs it as `python3 proxy.py`.
@@ -16,8 +18,11 @@ from __future__ import annotations
 import argparse
 import http.client
 import ipaddress
+import json
+import math
 import os
 import sys
+import threading
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
@@ -33,6 +38,69 @@ _HOP_BY_HOP = {
     "trailer", "transfer-encoding", "upgrade", "host", "content-length",
 }
 _AUTH_HEADERS = {"authorization", "x-api-key"}
+# Dropped so responses come back uncompressed and their usage can be metered.
+_UNMETERABLE = {"accept-encoding"}
+GENERATE_PATH = "/v1/messages"  # the only billed endpoint; count_tokens is free
+CACHE_READ_WEIGHT = 0.1  # cache reads cost a tenth of an input token
+
+
+def metered_tokens(usage: dict) -> int:
+    """Tokens charged against the cap for one response's `usage`: uncached input,
+    cache writes and output in full, cache reads at their price ratio (a tenth)."""
+    def n(key: str) -> int:
+        v = usage.get(key)
+        return v if isinstance(v, int) and v > 0 else 0
+    return (n("input_tokens") + n("cache_creation_input_tokens") + n("output_tokens")
+            + math.ceil(n("cache_read_input_tokens") * CACHE_READ_WEIGHT))
+
+
+def response_usage(body: bytes) -> dict | None:
+    """The final `usage` of a Messages response, plain JSON or an SSE stream (where
+    `message_start` carries it and each `message_delta` updates it cumulatively).
+    None when the body reports no usage (an error, or an unparseable body)."""
+    text = body.decode("utf-8", "replace")
+    if text.lstrip().startswith("{"):
+        try:
+            usage = json.loads(text).get("usage")
+        except (ValueError, AttributeError):
+            return None
+        return usage if isinstance(usage, dict) else None
+    usage: dict | None = None
+    for line in text.splitlines():
+        if not line.startswith("data:"):
+            continue
+        try:
+            event = json.loads(line[5:])
+        except ValueError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        if event.get("type") == "message_start":
+            u = (event.get("message") or {}).get("usage")
+            usage = dict(u) if isinstance(u, dict) else usage
+        elif event.get("type") == "message_delta" and isinstance(event.get("usage"), dict):
+            usage = {**(usage or {}), **event["usage"]}
+    return usage
+
+
+class TokenMeter:
+    """Thread-safe running total against a cap (None = unlimited). Requests are
+    checked before they are forwarded and charged when their response ends, so the
+    cap is overshot by at most the requests already in flight when it is reached."""
+
+    def __init__(self, cap: int | None = None) -> None:
+        self.cap = cap
+        self.spent = 0
+        self._lock = threading.Lock()
+
+    def exhausted(self) -> bool:
+        with self._lock:
+            return self.cap is not None and self.spent >= self.cap
+
+    def charge(self, tokens: int) -> int:
+        with self._lock:
+            self.spent += tokens
+            return self.spent
 
 
 @dataclass(frozen=True)
@@ -61,8 +129,11 @@ CREDENTIAL_KINDS = {
 
 def make_handler(kind: CredentialKind, secret: str, upstream: str,
                  allow: list[ipaddress.IPv4Network | ipaddress.IPv6Network] | None = None,
-                 timeout: float = 600.0) -> type[BaseHTTPRequestHandler]:
-    """Build the request handler. `allow`: client networks served (None = any)."""
+                 timeout: float = 600.0,
+                 meter: TokenMeter | None = None) -> type[BaseHTTPRequestHandler]:
+    """Build the request handler. `allow`: client networks served (None = any);
+    `meter`: the token cap shared by every request this proxy serves."""
+    meter = meter or TokenMeter()
     up = urlsplit(upstream)
     conn_cls = http.client.HTTPSConnection if up.scheme == "https" else http.client.HTTPConnection
     real_auth = kind.header_value(secret)
@@ -72,14 +143,14 @@ def make_handler(kind: CredentialKind, secret: str, upstream: str,
         # chunked stream (SSE) can be relayed as-is without re-chunking.
         protocol_version = "HTTP/1.0"
 
-        def _refuse(self, code: int, why: str) -> None:
+        def _refuse(self, code: int, why: str, error: str = "permission_error") -> None:
             self.log_message("refused %s %s: %s", self.command, self.path, why)
             self.send_response(code)
             self.send_header("content-type", "application/json")
             self.end_headers()
-            self.wfile.write(
-                b'{"type":"error","error":{"type":"permission_error",'
-                b'"message":"refused by SEAM credential proxy"}}')
+            self.wfile.write(json.dumps({"type": "error", "error": {
+                "type": error,
+                "message": f"refused by SEAM credential proxy: {why}"}}).encode())
 
         def _client_allowed(self) -> bool:
             if allow is None:
@@ -101,9 +172,12 @@ def make_handler(kind: CredentialKind, secret: str, upstream: str,
             if "transfer-encoding" in {k.lower() for k in self.headers}:
                 return self._refuse(411, "chunked request bodies are not supported")
             body = self.rfile.read(int(self.headers.get("content-length") or 0))
+            billed = path == GENERATE_PATH
+            if billed and meter.exhausted():
+                return self._refuse(429, f"token cap {meter.cap} reached", "rate_limit_error")
 
             headers = {k: v for k, v in self.headers.items()
-                       if k.lower() not in _HOP_BY_HOP | _AUTH_HEADERS}
+                       if k.lower() not in _HOP_BY_HOP | _AUTH_HEADERS | _UNMETERABLE}
             headers[kind.header] = real_auth
             conn = conn_cls(up.netloc, timeout=timeout)
             try:
@@ -114,9 +188,15 @@ def make_handler(kind: CredentialKind, secret: str, upstream: str,
                     if k.lower() not in _HOP_BY_HOP:
                         self.send_header(k, v)
                 self.end_headers()
-                while chunk := resp.read1(65536):
-                    self.wfile.write(chunk)
-                    self.wfile.flush()
+                relayed = bytearray()
+                try:
+                    while chunk := resp.read1(65536):
+                        relayed += chunk
+                        self.wfile.write(chunk)
+                        self.wfile.flush()
+                finally:  # a client that hangs up mid-stream is still charged
+                    if billed:
+                        self._charge(bytes(relayed))
             except OSError as e:
                 self.log_message("upstream error: %s", type(e).__name__)
                 if not self.wfile.closed:
@@ -126,6 +206,16 @@ def make_handler(kind: CredentialKind, secret: str, upstream: str,
                         pass
             finally:
                 conn.close()
+
+        def _charge(self, relayed: bytes) -> None:
+            usage = response_usage(relayed)
+            if usage is None:
+                self.log_message("no usage in response to %s", self.path)
+                return
+            used = metered_tokens(usage)
+            total = meter.charge(used)
+            self.log_message("metered %d tokens (total %d of %s)", used, total,
+                             meter.cap if meter.cap is not None else "no cap")
 
         do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = do_HEAD = _handle
 
@@ -138,9 +228,12 @@ def make_handler(kind: CredentialKind, secret: str, upstream: str,
 
 
 def serve(kind: CredentialKind, secret: str, listen: tuple[str, int],
-          upstream: str = DEFAULT_UPSTREAM, allow=None) -> ThreadingHTTPServer:
+          upstream: str = DEFAULT_UPSTREAM, allow=None,
+          token_cap: int | None = None) -> ThreadingHTTPServer:
     """Create (not start) the proxy server; call `serve_forever()` on the result."""
-    return ThreadingHTTPServer(listen, make_handler(kind, secret, upstream, allow))
+    meter = TokenMeter(token_cap)
+    return ThreadingHTTPServer(listen, make_handler(kind, secret, upstream, allow,
+                                                    meter=meter))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -150,6 +243,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--upstream", default=DEFAULT_UPSTREAM)
     p.add_argument("--allow", action="append", default=None,
                    help="client CIDR to serve (repeatable; default: any)")
+    p.add_argument("--token-cap", type=int, default=None,
+                   help="refuse generation once this many metered tokens are spent")
     args = p.parse_args(argv)
     secret = os.environ.get(args.credential_env)
     if not secret:
@@ -157,7 +252,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     allow = [ipaddress.ip_network(c) for c in args.allow] if args.allow else None
     server = serve(CREDENTIAL_KINDS[args.credential_env], secret,
-                   ("0.0.0.0", args.port), args.upstream, allow)
+                   ("0.0.0.0", args.port), args.upstream, allow, args.token_cap)
     print(f"seam-proxy: listening on :{args.port}", file=sys.stderr, flush=True)
     server.serve_forever()
     return 0

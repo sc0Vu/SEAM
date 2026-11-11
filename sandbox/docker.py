@@ -12,6 +12,7 @@ worker container (invariant 13).
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import uuid
@@ -144,7 +145,10 @@ class CredentialProxyContainer:
         docker: str = "docker",
         script: Path = PROXY_SCRIPT,
         runner: Runner = subprocess.run,
+        token_cap: int | None = None,
     ) -> None:
+        """`token_cap`: metered tokens the proxy forwards before it refuses
+        generation (None = no cap); it covers every agent that uses this proxy."""
         if credential_env not in CREDENTIAL_KINDS:
             raise ProxyError(f"unknown credential {credential_env!r}")
         self.kind = CREDENTIAL_KINDS[credential_env]
@@ -153,6 +157,7 @@ class CredentialProxyContainer:
         self.docker = docker
         self.script = Path(script).resolve()
         self.runner = runner
+        self.token_cap = token_cap
         self.name = f"seam-proxy-{uuid.uuid4().hex[:8]}"
         self.started = False
         self.log = ""
@@ -207,6 +212,8 @@ class CredentialProxyContainer:
         ]
         for subnet in subnets:
             argv += ["--allow", subnet]
+        if self.token_cap is not None:
+            argv += ["--token-cap", str(self.token_cap)]
         return argv
 
     def start(self) -> None:
@@ -231,6 +238,11 @@ class CredentialProxyContainer:
     def refused(self) -> list[str]:
         """Requests the proxy refused, from the log kept by `stop()`."""
         return [ln for ln in self.log.splitlines() if "refused" in ln]
+
+    def metered(self) -> int | None:
+        """Total metered tokens from the log kept by `stop()` (None: none recorded)."""
+        totals = re.findall(r"\(total (\d+) of ", self.log)
+        return int(totals[-1]) if totals else None
 
     def __enter__(self) -> CredentialProxyContainer:
         self.start()
