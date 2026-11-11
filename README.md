@@ -154,6 +154,26 @@ are billed. Measured so far: greeter case 1 ≈ $0.05, boltons goals $0.67–$1.
 **Commits.** Everything SEAM commits uses one identity (`SEAM merge engine`); which
 worker wrote what is in the trailers: `git log --grep 'SEAM-Worker: backend-2'`.
 
+## Use it from Claude Code or Claude Desktop (MCP)
+
+`mcp_server.py` exposes SEAM as MCP tools: `status`, `inspect`, the rulings
+(`resolve`, `rework`, `cancel`), plans (`draft_plan`, `save_plan`, `show_plan`),
+`run`, and `job` (a background job's log). Register it with Claude Code:
+
+```sh
+claude mcp add seam -- "$PWD/.venv/bin/python" "$PWD/mcp_server.py" \
+    --state-dir ~/seam-demo/x-state --repo ~/seam-demo/x --max-budget-usd 3
+```
+
+Limits are set here, at launch, not by the client: one state dir, the repos a client
+may plan or run on (`--repo`, repeatable), and the most a single run or plan may spend.
+Every spending call must also give its own `budget_usd`. `run` and `draft_plan` start
+`cli.py` in the background, and `run` holds the state dir's writer lock as usual. The
+server inherits its environment from the client that starts it, so export the
+credential in the shell you start the client from; don't put it in the MCP config.
+SEAM opens no network port. To work remotely, use your client's own remote access
+(e.g. Claude Code's Remote Control).
+
 ## Results
 
 2026-10-30 and 2026-11-11, Claude Code workers, Opus 5.5 reviewer; full detail and caveats in
@@ -195,7 +215,8 @@ sandbox/       Docker sandbox, credential proxy, sandbox image
 store/         sqlite task store: atomic claim, single merge slot, run accounting
 examples/      greeter (v1 cases), boltons (real-repo benchmarks)
 doc/           architecture.md — the design and every measurement
-cli.py         plan | run | add-goal | status | inspect
+cli.py         plan | run | add-goal | status | inspect | resolve | rework | cancel
+mcp_server.py  the same, as MCP tools over stdio
 ```
 
 ## Development

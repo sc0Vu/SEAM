@@ -772,3 +772,41 @@ gate cannot see without knowing the host library's pitfalls: three runs out of t
 fell into it. This is one run on a partitionable goal, written by the same assistant
 that wrote the probes, so it is a data point, not a rate. Escalation on real code is
 still unobserved (0 of 23 real-code tasks across bench-1 to bench-4).
+
+---
+
+## 13. MCP server (built)
+
+**Constraint served: the human in the loop, reachable (invariant 9).** Escalations
+need a human ruling, and the person may not be at the terminal. `mcp_server.py`
+exposes the CLI as MCP tools over stdio, so any MCP client can read state and rule on
+escalations: Claude Code, Claude Desktop, or either one used remotely through its own
+remote access. SEAM itself opens no port, so it adds no network attack surface.
+
+**Tools.** `status`, `inspect`, `show_plan` and `job` read only. `resolve`, `rework`
+and `cancel` call `cli.main`, so they take the writer lock (§5) and obey the same
+rules (§3, human rulings). `save_plan` validates with `plan_from_dict` before saving.
+`draft_plan` and `run` start `cli.py` as a detached background process that logs to
+`<state-dir>/jobs/<id>.log`, and return at once. `run` holds the writer lock itself, so
+the server never writes task state concurrently with a team, and it is refused up
+front if another writer is active.
+
+**Limits fixed at launch, not by the client.** One `--state-dir`; the repos a client
+may plan or run on (`--repo`, repeatable; any other path is refused); and
+`--max-budget-usd`, the ceiling for any one run or plan. Every spending call must also
+give an explicit `budget_usd`. Plan names are restricted to `[A-Za-z0-9_.-]`, so
+nothing is written outside `<state-dir>/plans/`. A client, or a prompt injected into
+one, can therefore neither aim SEAM at other paths nor start an uncapped run. Tool
+annotations mark the read-only and destructive tools, and the server's instructions
+tell the model to confirm with the user before rulings and spending.
+
+**Credential.** The server inherits the environment of the client that starts it, and
+passes it on to the `cli.py` processes. The real credential still reaches only the
+credential proxy (§10); it is never a tool argument or a tool output.
+
+**Protocol.** Newline-delimited JSON-RPC 2.0, tools only (`initialize`, `ping`,
+`tools/list`, `tools/call`), protocol versions 2024-11-05 to 2025-06-18. It uses only
+the standard library, since SEAM has no runtime dependencies. Unit tests cover the
+protocol, every refusal and the job plumbing. The official `mcp` 2.3.0 client was run
+against it over stdio (initialize, list, call, an over-cap refusal, a cancel) from a
+scratch venv; it is not a SEAM dependency.

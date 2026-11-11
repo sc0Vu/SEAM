@@ -90,7 +90,8 @@ store/           task store (sqlite v1 → postgres); schema + atomic claim
 contract/        the frozen interface contract the lead owns (workers build against it)
 doc/
   architecture.md   FULL design — source of truth for the architecture
-cli.py           entrypoint: run | status | add-goal | inspect
+cli.py           entrypoint: plan | run | status | add-goal | inspect | resolve | rework | cancel
+mcp_server.py    the CLI as MCP tools (stdio); limits fixed at launch
 ```
 
 ## Commands
