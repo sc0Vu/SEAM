@@ -67,7 +67,7 @@ def test_notifications_get_no_reply_and_unknown_methods_an_error(cfg):
 def test_tools_are_listed_with_schemas_and_hints(cfg):
     tools = M.handle(cfg, {"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]
     by = {t["name"]: t for t in tools}
-    assert set(by) == {"status", "inspect", "resolve", "rework", "cancel", "draft_plan",
+    assert set(by) == {"status", "inspect", "resolve", "rework", "cancel", "amend", "draft_plan",
                        "save_plan", "show_plan", "run", "job"}
     assert by["status"]["annotations"]["readOnlyHint"] is True
     assert by["cancel"]["annotations"]["destructiveHint"] is True
@@ -217,3 +217,16 @@ def test_a_real_background_job_logs_its_exit(cfg):
             break
         time.sleep(0.1)
     assert "finished, exit 0" in text and "no tasks" in text
+
+
+def test_amend_tool_uses_a_saved_plan(cfg):
+    case1 = json.loads((EXAMPLES / "case1.json").read_text())
+    case2 = json.loads((EXAMPLES / "case2.json").read_text())
+    call(cfg, "save_plan", name="v1", plan=case1)
+    call(cfg, "save_plan", name="v2", plan={**case2, "goal": "v2"})
+    assert M.cli.main(["add-goal", "--state-dir", str(cfg.state_dir),
+                       "--plan", str(cfg.plans / "v1.json")]) == 0
+    text, failed = call(cfg, "amend", from_goal=case1["goal"], plan="missing")
+    assert failed and "no saved plan" in text
+    text, failed = call(cfg, "amend", from_goal=case1["goal"], plan="v2")
+    assert not failed and "amends" in text and "cancelled: task 1, task 2" in text

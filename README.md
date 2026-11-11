@@ -123,6 +123,7 @@ branch is not checked out (`make_repo.sh` leaves `HEAD` detached).
 | `cli.py resolve --task N` | requeue an escalated task whose branch a review approved (it escalated at merge); the full suite still runs |
 | `cli.py rework --task N --notes "…"` | send an escalated task back to a worker with your guidance |
 | `cli.py cancel --task N` | cancel a task and everything that depends on it |
+| `cli.py amend --from-goal A --plan new.json` | change direction: cancel goal A's unstarted tasks, keep merged and in-flight work, load the new plan; A's spend counts toward the new goal's budget |
 
 Commands that change task state refuse to run while another one (usually a `run`)
 holds the state dir, so a human ruling never races a running team.
@@ -158,7 +159,7 @@ worker wrote what is in the trailers: `git log --grep 'SEAM-Worker: backend-2'`.
 
 `mcp_server.py` exposes SEAM as MCP tools: `status`, `inspect`, the rulings
 (`resolve`, `rework`, `cancel`), plans (`draft_plan`, `save_plan`, `show_plan`),
-`run`, and `job` (a background job's log). Register it with Claude Code:
+`amend`, `run`, and `job` (a background job's log). Register it with Claude Code:
 
 ```sh
 claude mcp add seam -- "$PWD/.venv/bin/python" "$PWD/mcp_server.py" \
@@ -215,7 +216,7 @@ sandbox/       Docker sandbox, credential proxy, sandbox image
 store/         sqlite task store: atomic claim, single merge slot, run accounting
 examples/      greeter (v1 cases), boltons (real-repo benchmarks)
 doc/           architecture.md — the design and every measurement
-cli.py         plan | run | add-goal | status | inspect | resolve | rework | cancel
+cli.py         plan | run | add-goal | amend | status | inspect | resolve | rework | cancel
 mcp_server.py  the same, as MCP tools over stdio
 ```
 

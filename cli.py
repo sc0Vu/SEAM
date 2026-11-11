@@ -1,4 +1,5 @@
-"""SEAM entrypoint: plan | add-goal | run | status | inspect | resolve | rework | cancel.
+"""SEAM entrypoint: plan | add-goal | amend | run | status | inspect | resolve | rework |
+cancel.
 
 The only place that prints or exits; everything below raises typed exceptions.
 """
@@ -66,6 +67,23 @@ def _add_goal(args: argparse.Namespace) -> None:
     plan = load_plan(args.plan)
     store = _store(args.state_dir)
     created = Lead(store, args.goal or plan.goal, Budget(0)).submit_plan(plan)
+    for key, t in created.items():
+        print(f"task {t.id:>3}  {key:<20} {t.spec.type:<9} scope={list(t.spec.file_scope)}")
+
+
+def cmd_amend(args: argparse.Namespace) -> None:
+    """Replace a goal with a new plan (a change of direction); see `Lead.amend`."""
+    plan = load_plan(args.plan)
+    with writer_lock(args.state_dir, "amend"):
+        store = _store(args.state_dir)
+        cancelled, created = Lead(store, args.goal or plan.goal, Budget(0)).amend(
+            args.from_goal, plan, cancel_in_flight=args.cancel_in_flight)
+    kept = [t.id for t in store.list() if t.spec.goal_id == args.from_goal
+            and t.state not in TERMINAL]
+    print(f"goal {args.goal or plan.goal!r} amends {args.from_goal!r}")
+    print("cancelled: " + (", ".join(f"task {t.id}" for t in cancelled) or "none"))
+    if kept:
+        print(f"kept in flight (they finish first; their files stay reserved): {kept}")
     for key, t in created.items():
         print(f"task {t.id:>3}  {key:<20} {t.spec.type:<9} scope={list(t.spec.file_scope)}")
 
@@ -250,6 +268,8 @@ def cmd_status(args: argparse.Namespace) -> None:
     merging = [t.id for t in tasks if t.state is State.MERGING]
     queued = [t.id for t in tasks if t.state is State.QUEUED_FOR_MERGE]
     print(f"merge slot: {merging or 'free'}   queue: {queued}")
+    for new, old in store.amendments():
+        print(f"goal {new!r} amends {old!r}")
     writer = active_writer(args.state_dir)
     if writer:
         print(f"writing now: {writer}")
@@ -331,6 +351,15 @@ def parser() -> argparse.ArgumentParser:
     g.add_argument("--plan", required=True)
     g.add_argument("--goal", help="goal label (defaults to the plan's)")
     g.set_defaults(func=cmd_add_goal)
+
+    a = sub.add_parser("amend", help="replace a goal with a new plan (change of direction)")
+    common(a)
+    a.add_argument("--from-goal", required=True, help="the goal being replaced")
+    a.add_argument("--plan", required=True, help="the new plan")
+    a.add_argument("--goal", help="the new goal's id (defaults to the plan's)")
+    a.add_argument("--cancel-in-flight", action="store_true",
+                   help="also cancel the old goal's started tasks (never one mid-merge)")
+    a.set_defaults(func=cmd_amend)
 
     r = sub.add_parser("run", help="run a team until no more progress is possible")
     common(r)

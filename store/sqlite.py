@@ -47,6 +47,12 @@ CREATE TABLE IF NOT EXISTS tasks (
 -- Invariant 4 enforced by the database itself: at most one row may be `merging`.
 CREATE UNIQUE INDEX IF NOT EXISTS one_merging ON tasks(state) WHERE state = 'merging';
 -- One row per agent run (worker run or review), for cost and token accounting.
+-- Goals, and which goal each one amends (a change of direction, `Lead.amend`).
+CREATE TABLE IF NOT EXISTS goals (
+    goal_id    TEXT PRIMARY KEY,
+    supersedes TEXT,                            -- the goal this one amends, or NULL
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS runs (
     id                 INTEGER PRIMARY KEY AUTOINCREMENT,
     task_id            INTEGER NOT NULL REFERENCES tasks(id),
@@ -299,6 +305,31 @@ class TaskStore:
                  u.input_tokens, u.cache_read_tokens, u.cache_write_tokens, u.output_tokens,
                  run.notes, run.probes),
             )
+
+    def record_goal(self, goal_id: str, supersedes: str | None = None) -> None:
+        """Record a goal and the goal it amends (if any). Recording is idempotent for
+        a plain goal; an amendment link, once set, is never rewritten."""
+        with self._tx() as db:
+            db.execute("INSERT OR IGNORE INTO goals (goal_id, supersedes) VALUES (?, ?)",
+                       (goal_id, supersedes))
+
+    def amendments(self) -> list[tuple[str, str]]:
+        """(goal, the goal it amends) for every amendment, oldest first."""
+        rows = self._db.execute("SELECT goal_id, supersedes FROM goals"
+                                " WHERE supersedes IS NOT NULL ORDER BY rowid")
+        return [(r["goal_id"], r["supersedes"]) for r in rows]
+
+    def goal_lineage(self, goal_id: str) -> list[str]:
+        """`goal_id` and every goal it (transitively) amends, newest first."""
+        chain, seen = [], set()
+        current: str | None = goal_id
+        while current is not None and current not in seen:
+            chain.append(current)
+            seen.add(current)
+            row = self._db.execute("SELECT supersedes FROM goals WHERE goal_id = ?",
+                                   (current,)).fetchone()
+            current = row["supersedes"] if row else None
+        return chain
 
     def spent_usd(self, goal_ids: Iterable[str]) -> float:
         """Dollars already recorded for these goals' tasks. Every charge to a budget

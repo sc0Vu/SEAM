@@ -90,7 +90,8 @@ store/           task store (sqlite v1 → postgres); schema + atomic claim
 contract/        the frozen interface contract the lead owns (workers build against it)
 doc/
   architecture.md   FULL design — source of truth for the architecture
-cli.py           entrypoint: plan | run | status | add-goal | inspect | resolve | rework | cancel
+cli.py           entrypoint: plan | run | status | add-goal | amend | inspect | resolve |
+                 rework | cancel
 mcp_server.py    the CLI as MCP tools (stdio); limits fixed at launch
 ```
 
@@ -102,6 +103,7 @@ python cli.py add-goal --plan <plan.json>            # load a plan without runni
 python cli.py status                                 # task states, merge queue, escalations
 python cli.py inspect --task <id>                    # one task's branch, diff, review notes
 python cli.py resolve|rework|cancel --task <id>      # a human's ruling on an escalation
+python cli.py amend --from-goal <id> --plan <new.json>  # change a goal's direction
 pytest && ruff check .                               # test + lint gate (use .venv/bin/)
 ```
 All take `--state-dir` (default `./.seam`). The real-agent v1 run is

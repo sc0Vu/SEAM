@@ -84,8 +84,25 @@ ARTEX mapping: lead = planner (sole producer, singular), workers = ARTEX workers
 task store = dual graph (merged main = asset/truth; per-task branch =
 exploration/working), reviewer + merge = prove_goal gate, made real for mutable code.
 **Budget cap** (CLAUDE.md conventions) is per goal and enforced by the lead — it stops
-dispatching when the goal's token/cost ceiling is hit. It lives with goals, not tasks;
-a `goals` table arrives with the coordinator.
+dispatching when the goal's token/cost ceiling is hit. It lives with goals, not tasks.
+The `goals` table records each goal and the goal it amends, if any.
+
+**Changing direction** (`Lead.amend`, `cli.py amend --from-goal A --plan new.json`).
+The human writes the goal (the one input SEAM cannot infer, and what every review
+checks against). When it changes, `amend` replaces goal A with goal B's plan, under the
+writer lock:
+- Everything is checked before anything changes: the new plan is valid, A exists, and
+  B is a new id that isn't loaded yet. A bad amendment leaves the store untouched.
+- A's `open` tasks are cancelled, cascading to their dependents. With
+  `--cancel-in-flight`, A's started tasks are cancelled too, except one `merging`
+  (invariant 12).
+- Merged work stays on main. Kept in-flight tasks still hold their scopes, so B's
+  tasks on the same files wait for them (invariant 2).
+- B's tasks are loaded, and `goals` records "B amends A"; `status` shows it.
+- B's budget includes the spend of A and of everything A amended (`goal_lineage`), so
+  amending a goal never resets its cap.
+The planner reads the current repo, so a plan drafted after some work merged
+builds on that work.
 The **architect** (owns the interface contract) is a hat the lead wears in v1; split
 out later. Contract changes go through the lead, serialized — a worker never changes
 a shared interface unilaterally (the main source of semantic conflicts).
@@ -783,8 +800,8 @@ exposes the CLI as MCP tools over stdio, so any MCP client can read state and ru
 escalations: Claude Code, Claude Desktop, or either one used remotely through its own
 remote access. SEAM itself opens no port, so it adds no network attack surface.
 
-**Tools.** `status`, `inspect`, `show_plan` and `job` read only. `resolve`, `rework`
-and `cancel` call `cli.main`, so they take the writer lock (§5) and obey the same
+**Tools.** `status`, `inspect`, `show_plan` and `job` read only. `resolve`, `rework`,
+`cancel` and `amend` (with a saved plan) call `cli.main`, so they take the writer lock (§5) and obey the same
 rules (§3, human rulings). `save_plan` validates with `plan_from_dict` before saving.
 `draft_plan` and `run` start `cli.py` as a detached background process that logs to
 `<state-dir>/jobs/<id>.log`, and return at once. `run` holds the writer lock itself, so

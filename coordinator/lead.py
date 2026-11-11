@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from engine.errors import SeamError
+from engine.states import TERMINAL, Event, State
 from engine.task import Task, TaskSpec
 from store.sqlite import TaskStore
 
@@ -41,8 +42,10 @@ class Budget:
 
 def goal_budget(store: TaskStore, limit_usd: float, goal_ids: Iterable[str]) -> Budget:
     """The budget for a run of these goals, starting from what earlier runs already
-    spent on them (from the `runs` table), so restarting `run` never resets the cap."""
-    return Budget(limit_usd, store.spent_usd(goal_ids))
+    spent on them (from the `runs` table), so restarting `run` never resets the cap.
+    It includes the goals each one amends, so amending a goal doesn't reset it either."""
+    lineage = {g for goal in goal_ids for g in store.goal_lineage(goal)}
+    return Budget(limit_usd, store.spent_usd(sorted(lineage)))
 
 
 @dataclass(frozen=True)
@@ -125,6 +128,7 @@ class Lead:
             raise GoalAlreadyLoaded(
                 f"goal {self.goal_id!r} is already loaded as tasks {existing}; resume with "
                 "`run` without --plan, or use a fresh --state-dir or a new --goal")
+        self.store.record_goal(self.goal_id)
         created: dict[str, Task] = {}
         for t in plan.tasks:
             created[t["key"]] = self.store.create(TaskSpec(
@@ -138,6 +142,43 @@ class Lead:
                 test_cmd=t.get("test_cmd", ""),
             ))
         return created
+
+    def amend(self, old_goal: str, plan: Plan,
+              cancel_in_flight: bool = False) -> tuple[list[Task], dict[str, Task]]:
+        """Change direction: replace `old_goal` with this lead's goal and `plan`.
+
+        Cancels the old goal's unstarted (`open`) tasks, and with `cancel_in_flight`
+        every other cancellable one too (never one that is `merging`: invariant 12).
+        Merged work stays on main, and in-flight tasks that are kept still hold their
+        scopes, so new tasks touching the same files wait for them (invariant 2).
+        Then loads the new plan and records that this goal amends `old_goal`, which
+        carries the old goal's spend into this goal's budget (`goal_budget`).
+
+        Everything is checked before anything changes: an unknown old goal, a new goal
+        already loaded, or reusing the old goal's id raise `PlanError` with the store
+        untouched. Returns (cancelled tasks, created tasks by plan key).
+        """
+        old = [t for t in self.store.list() if t.spec.goal_id == old_goal]
+        if not old:
+            raise PlanError(f"no goal {old_goal!r} in this state dir")
+        if self.goal_id == old_goal:
+            raise PlanError("an amendment needs a new goal id (set --goal)")
+        if any(t.spec.goal_id == self.goal_id for t in self.store.list()):
+            raise GoalAlreadyLoaded(f"goal {self.goal_id!r} is already loaded")
+        drop = {State.OPEN} if not cancel_in_flight else \
+            set(State) - TERMINAL - {State.MERGING}
+        cancelled: dict[int, Task] = {}
+        for t in old:
+            if self.store.get(t.id).state in drop:  # a cascade may have cancelled it
+                before = {x.id for x in self.store.list(State.CANCELLED)}
+                self.store.transition(t.id, Event.CANCEL)
+                for x in self.store.list(State.CANCELLED):
+                    if x.id not in before:
+                        cancelled[x.id] = x
+        self.store.record_goal(old_goal)
+        self.store.record_goal(self.goal_id, supersedes=old_goal)
+        created = self.submit_plan(plan)
+        return list(cancelled.values()), created
 
     def decide_scope(self, task_id: int, globs: list[str]) -> Task:
         """Grant a scope expansion iff it keeps every in-flight scope disjoint."""

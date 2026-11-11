@@ -10,11 +10,12 @@ or plan may spend (`--max-budget-usd`). A client, or a prompt injected into one,
 cannot point SEAM at other paths or start an uncapped run.
 
 Tools: status, inspect, the human rulings (resolve, rework, cancel), plans (draft,
-save, show), run, and job (a background job's log). `run` and `draft_plan` start
-`cli.py` as a background process and return at once; `run` takes the state dir's
-writer lock itself, so this server never writes task state concurrently with it
-(the single-writer condition for sqlite). Everything else goes through `cli.main`,
-so it gets the same checks, locking, and messages as the command line.
+save, show), amend (change a goal's direction), run, and job (a background job's
+log). `run` and `draft_plan` start `cli.py` as a background process and return at
+once; `run` takes the state dir's writer lock itself, so this server never writes
+task state concurrently with it (the single-writer condition for sqlite). Everything
+else goes through `cli.main`, so it gets the same checks, locking, and messages as
+the command line.
 
 Protocol: MCP over stdio, newline-delimited JSON-RPC 2.0, tools only. Stdlib only, as
 SEAM has no runtime dependencies. stdout carries protocol messages ONLY; logs go to
@@ -174,6 +175,20 @@ def save_plan(cfg: Config, args: dict) -> str:
     return f"saved plan {name!r}: {len(checked.tasks)} task(s) for goal {checked.goal!r}"
 
 
+def amend(cfg: Config, args: dict) -> str:
+    """Replace a goal with a saved plan; same rules as `cli.py amend`."""
+    old, plan = args.get("from_goal"), _name(args, "plan")
+    if not isinstance(old, str) or not old:
+        raise ToolError("from_goal is required")
+    path = _plan_path(cfg, plan)
+    if not path.exists():
+        raise ToolError(f"no saved plan {plan!r}")
+    argv = ["amend", "--from-goal", old, "--plan", str(path)]
+    if args.get("cancel_in_flight") is True:
+        argv.append("--cancel-in-flight")
+    return _cli(cfg, *argv)
+
+
 def _repo(cfg: Config, args: dict) -> Path:
     raw = args.get("repo")
     if not isinstance(raw, str):
@@ -307,6 +322,13 @@ TOOLS = [
                          "name": {"type": "string", "description": "plan name"},
                          **BUDGET, **TARGET},
           "required": ["repo", "goal", "name", "budget_usd"]}, draft_plan),
+    Tool("amend", "Change direction: replace goal `from_goal` with a saved plan. "
+         "Cancels the old goal's unstarted tasks (and, with cancel_in_flight, its started "
+         "ones); merged work stays. The old goal's spend counts toward the new budget.",
+         {"properties": {"from_goal": {"type": "string"},
+                         "plan": {"type": "string", "description": "saved plan name"},
+                         "cancel_in_flight": {"type": "boolean", "default": False}},
+          "required": ["from_goal", "plan"]}, amend, destructive=True),
     Tool("save_plan", "Validate and save a plan (JSON object with goal and tasks), "
          "e.g. an edited draft.",
          {"properties": {"name": {"type": "string"},

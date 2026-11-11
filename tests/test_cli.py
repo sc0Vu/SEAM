@@ -132,3 +132,18 @@ def test_writers_are_refused_while_another_holds_the_state_dir(tmp_path, capsys)
                          "--plan", str(EXAMPLES / "case2.json")]) == 1
         assert cli.main(["status", "--state-dir", str(state)]) == 0  # readers are fine
         assert "writing now: run, pid" in capsys.readouterr().out
+
+
+def test_amend_from_the_cli_and_status_shows_the_link(tmp_path, capsys):
+    state = str(tmp_path / "s")
+    assert cli.main(["add-goal", "--state-dir", state, "--plan", str(EXAMPLES / "case1.json")]) == 0
+    old = load_plan(EXAMPLES / "case1.json").goal
+    capsys.readouterr()
+    args = ["amend", "--state-dir", state, "--from-goal", old, "--goal", "v2",
+            "--plan", str(EXAMPLES / "case2.json")]
+    assert cli.main(args) == 0
+    out = capsys.readouterr().out
+    assert f"amends {old!r}" in out and "cancelled: task 1, task 2" in out
+    assert cli.main(["status", "--state-dir", state]) == 0
+    assert f"goal 'v2' amends {old!r}" in capsys.readouterr().out
+    assert cli.main(args) == 1  # v2 is loaded now: a clean error, nothing changes
