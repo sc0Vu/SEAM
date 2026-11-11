@@ -150,7 +150,7 @@ worker wrote what is in the trailers: `git log --grep 'SEAM-Worker: backend-2'`.
 
 ## Results
 
-All on 2026-10-30, Claude Code workers, Opus 5.5 reviewer; full detail and caveats in
+2026-10-30 and 2026-11-11, Claude Code workers, Opus 5.5 reviewer; full detail and caveats in
 [doc/architecture.md §8, §11, §12](doc/architecture.md).
 
 | run | outcome |
@@ -160,13 +160,17 @@ All on 2026-10-30, Claude Code workers, Opus 5.5 reviewer; full detail and cavea
 | boltons-bench-1: 8 independent features | 8/8 merged, 0 escalated; `master` 807 tests green; $0.67 |
 | boltons-bench-2: 5 tasks with dependencies and a shared file | 5/5 merged in the right order; the reviewer rejected 2 real bugs, both fixed on retry; $1.35 |
 | LLM planner on the bench-2 goal | 2-task plan with the right dependency; found the coupling on its own; $0.07 |
+| that plan, run unedited | 2/2 merged, 0 escalated — but 2 test-passing defects shipped (one inherited from a boltons bug); $0.47 |
+| LLM planner on the bench-1 goal, run unedited | same 8-task plan as the hand-written one; 8/8 merged, 0 escalated; probes found 1 defect, inherited from a boltons bug that bench-1's hand-planned run also hit; $1.44 |
 
 What these do **not** show:
 
 - **An escalation rate on real code.** No real-code task has escalated yet. The plans
   were written by the same AI that built SEAM, and careful hand plans rarely contain
-  the mistakes that cause escalations. The LLM planner exists to measure this
-  honestly; its first plan has not been run yet.
+  the mistakes that cause escalations. Two LLM plans have now run unedited; neither
+  escalated (10 tasks), which is too few to call a rate.
+- **That merged means correct.** Behavioral probes, run after the fact, found
+  test-passing defects on master after both LLM-planned runs.
 - **A reliable reviewer.** Re-reviews showed a single LLM review let a significant,
   test-passing bug through about half the time. Adversarial probe tests caught 4/4
   buggy versions but also falsely rejected 3/4 correct ones (their assertions encoded

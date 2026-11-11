@@ -178,6 +178,8 @@ footer { border-top: 1px solid var(--line); padding: 28px 0 48px; color: var(--m
         <tr><td>boltons: 8 independent features</td><td><span class="pill ok">merged 8/8</span> 807 tests green on master</td><td>$0.67</td></tr>
         <tr><td>boltons: 5 tasks with dependencies and a shared file</td><td><span class="pill ok">merged 5/5</span> right order; reviewer rejected 2 real bugs, both fixed on retry</td><td>$1.35</td></tr>
         <tr><td>LLM planner on the boltons goal</td><td><span class="pill ok">valid plan</span> right dependency; found the cross-module coupling on its own</td><td>$0.07</td></tr>
+        <tr><td>That plan, run unedited</td><td><span class="pill warn">merged 2/2</span> but 2 test-passing defects shipped (one inherited from a boltons bug)</td><td>$0.47</td></tr>
+        <tr><td>LLM planner on the 8-feature goal, run unedited</td><td><span class="pill warn">merged 8/8</span> same plan as the hand-written one; probes found 1 defect, inherited from a boltons bug</td><td>$1.44</td></tr>
       </tbody>
     </table>
     </div>

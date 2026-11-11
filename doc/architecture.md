@@ -710,3 +710,43 @@ The project needs a silent-defect check (behavioral probes run after the fact, a
 here) alongside merged / needs_human, and a stronger gate (§11's probes, which
 caught both defect classes, need a false-rejection fix first).
 
+
+**Second LLM-planned run (2026-11-11, bench-1's goal in prose, `~/seam-demo/bench4`),
+with a silent-defect check.** Before the run, behavioral probes were written from the
+feature descriptions alone (`examples/boltons/bench1_probes.py`, committed before
+any agent code existed). The goal text listed the 8 features and quoted the full suite
+command. The planner ($0.08, 14,665 tokens metered by the proxy) produced the same 8
+disjoint module + test-file tasks as the hand-written plan, no dependencies, and noted
+on its own that urlutils' `OrderedMultiDict` import does not make the URL task depend
+on the dictutils one. This time every `test_cmd` included `--doctest-modules`, but the
+goal quoted the suite command, so that is not evidence the gap is fixed. Run unedited,
+`--workers 2`:
+
+| result | value |
+|---|---|
+| merged / needs_human | **8 / 0**, no review rejections |
+| master | 806 passed (doctests included) |
+| silent-defect probes | **1 defect, inherited** (83 passed, 1 failed; see below) |
+| cost | $1.36 (workers $0.45, reviewer $0.91) + $0.08 planning; proxy metered 120,789 tokens |
+
+Run on bench-1's hand-planned master, the same probes give the same result: 1 failed.
+
+**The one failure has a root cause that predates SEAM.** In boltons, `qp = query_params`
+aliases a `cachedproperty`. Reading `url.qp` re-parses the URL's text and overwrites
+the cached `query_params`, which silently discards any in-place edit, even on
+unmodified boltons (checked in the sandbox). Both runs' `with_query_param` build their
+result by editing `query_params` in place. So the URL they return reverts to the
+original as soon as a caller reads `.qp`. The new method has a user-visible defect,
+inherited from that bug, and building the result from new text would have avoided it.
+The review approved it, reasoning only that the original URL's cache is untouched.
+Bench-3's URL defect (above) has the same root cause: there too, reading `.qp` first
+makes `replace_query_param` / `remove_query_params` return the original URL. Its
+`setlist(nan, …)` defect is unrelated. The probe was split into its own test after
+the run to classify this; no probe was weakened or removed.
+
+Reading: on 8 independent features, the LLM planner matches the hand-written plan,
+and the run merged everything. The only silent defect the probes found is one the
+gate cannot see without knowing the host library's pitfalls: three runs out of three
+fell into it. This is one run on a partitionable goal, written by the same assistant
+that wrote the probes, so it is a data point, not a rate. Escalation on real code is
+still unobserved (0 of 23 real-code tasks across bench-1 to bench-4).
