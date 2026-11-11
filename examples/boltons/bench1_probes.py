@@ -126,7 +126,19 @@ def test_with_query_param_returns_new_consistent_url():
     assert v.query_params.getlist("a") == ["9"] and v.query_params["b"] == "3"
     # The text and the parsed params of the new URL agree (bench-3's defect class).
     assert URL(v.to_text()).query_params.getlist("a") == ["9"]
+
+
+# Split out after the 2026-11-11 run (the only post-hoc change), to classify it.
+# Root cause predates the change: in boltons, `qp = query_params` aliases a
+# cachedproperty, and reading `url.qp` re-parses the URL's text and overwrites the
+# cached `query_params`, discarding any in-place edit. A `with_query_param` that
+# builds its result by editing `query_params` in place therefore returns a URL that
+# reverts to the ORIGINAL once a caller reads `.qp`: a user-visible defect of the new
+# method, inherited from that bug (building the result from new text avoids it).
+def test_with_query_param_survives_reading_qp():
+    v = URL("http://example.com/p?a=1&a=2&b=3").with_query_param("a", "9")
     assert v.qp.getlist("a") == ["9"]
+    assert URL(v.to_text()).query_params.getlist("a") == ["9"]
 
 
 def test_with_query_param_adds_a_missing_key():
