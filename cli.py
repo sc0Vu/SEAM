@@ -1,4 +1,4 @@
-"""SEAM entrypoint: plan | add-goal | run | status | inspect.
+"""SEAM entrypoint: plan | add-goal | run | status | inspect | resolve | rework | cancel.
 
 The only place that prints or exits; everything below raises typed exceptions.
 """
@@ -14,6 +14,7 @@ import tempfile
 from collections import Counter
 from pathlib import Path
 
+from coordinator import escalation
 from coordinator.lead import Budget, Lead, goal_budget, load_plan
 from engine.errors import SeamError
 from engine.git import GitRepo
@@ -28,6 +29,7 @@ from reviewer.gate import DEFAULT_PROBE_CMD, ReviewGate
 from sandbox.docker import DEFAULT_IMAGE, CredentialProxyContainer, DockerSandbox, host_user
 from sandbox.proxy import CREDENTIAL_KINDS
 from store import TaskStore
+from store.lock import active_writer, writer_lock
 from workers.claude_code import ClaudeCodeWorker
 
 AUTH_ENV = tuple(CREDENTIAL_KINDS)  # the real one goes only to the credential proxy
@@ -56,6 +58,11 @@ def _store(state_dir: Path) -> TaskStore:
 
 
 def cmd_add_goal(args: argparse.Namespace) -> None:
+    with writer_lock(args.state_dir, "add-goal"):
+        _add_goal(args)
+
+
+def _add_goal(args: argparse.Namespace) -> None:
     plan = load_plan(args.plan)
     store = _store(args.state_dir)
     created = Lead(store, args.goal or plan.goal, Budget(0)).submit_plan(plan)
@@ -152,11 +159,18 @@ def cmd_plan(args: argparse.Namespace) -> None:
 
 
 def cmd_run(args: argparse.Namespace) -> None:
+    """Run a team. Holds the state dir's writer lock throughout, so no other command
+    changes task state while agents work (the single-writer condition for sqlite)."""
+    with writer_lock(args.state_dir, "run"):
+        _run(args)
+
+
+def _run(args: argparse.Namespace) -> None:
     repo = GitRepo(args.repo)
     tests = DockerSandbox(args.image, user=host_user())
     credential = preflight(args, repo, tests)
     if args.plan:
-        cmd_add_goal(args)
+        _add_goal(args)
     store = _store(args.state_dir)
     scratch = args.state_dir / "tmp"
     with CredentialProxyContainer(credential, args.image,
@@ -236,10 +250,41 @@ def cmd_status(args: argparse.Namespace) -> None:
     merging = [t.id for t in tasks if t.state is State.MERGING]
     queued = [t.id for t in tasks if t.state is State.QUEUED_FOR_MERGE]
     print(f"merge slot: {merging or 'free'}   queue: {queued}")
+    writer = active_writer(args.state_dir)
+    if writer:
+        print(f"writing now: {writer}")
     _print_tasks(tasks)
     for t in tasks:
         if t.state is State.NEEDS_HUMAN:
             print(f"\n== ESCALATED task {t.id}: {t.spec.description}\n{t.review_notes}")
+            print(f"   rule on it: {_rulings(store, t.id)}")
+
+
+def _rulings(store: TaskStore, task_id: int) -> str:
+    """The commands that apply to an escalated task as it stands."""
+    options = [f"rework --task {task_id} --notes '...'", f"cancel --task {task_id}"]
+    if escalation.approved_as_is(store, task_id):
+        options.insert(0, f"resolve --task {task_id}")
+    return " | ".join(options)
+
+
+def cmd_resolve(args: argparse.Namespace) -> None:
+    with writer_lock(args.state_dir, "resolve"):
+        t = escalation.resolve(_store(args.state_dir), args.task, args.notes)
+    print(f"task {t.id} -> {t.state}: the next `run` merges it after the full suite")
+
+
+def cmd_rework(args: argparse.Namespace) -> None:
+    with writer_lock(args.state_dir, "rework"):
+        t = escalation.rework(_store(args.state_dir), args.task, args.notes)
+    print(f"task {t.id} -> {t.state}: the next `run` sends it back to {t.owner} "
+          "with your notes")
+
+
+def cmd_cancel(args: argparse.Namespace) -> None:
+    with writer_lock(args.state_dir, "cancel"):
+        gone = escalation.cancel(_store(args.state_dir), args.task, args.notes)
+    print("cancelled: " + ", ".join(f"task {t.id}" for t in gone))
 
 
 def cmd_inspect(args: argparse.Namespace) -> None:
@@ -319,6 +364,20 @@ def parser() -> argparse.ArgumentParser:
     common(i)
     i.add_argument("--task", type=int, required=True)
     i.set_defaults(func=cmd_inspect)
+
+    for name, func, help_, notes_help in (
+        ("resolve", cmd_resolve, "requeue an escalated task whose approved branch "
+         "needs no edits (the full suite still runs at merge)", "why (recorded)"),
+        ("rework", cmd_rework, "send an escalated task back to its worker with notes",
+         "guidance for the worker (required)"),
+        ("cancel", cmd_cancel, "cancel a task and every task that depends on it",
+         "why (recorded)"),
+    ):
+        h = sub.add_parser(name, help=help_)
+        common(h)
+        h.add_argument("--task", type=int, required=True)
+        h.add_argument("--notes", default="", required=name == "rework", help=notes_help)
+        h.set_defaults(func=func)
     return p
 
 

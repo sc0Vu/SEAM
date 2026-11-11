@@ -140,8 +140,8 @@ in_review ─fail(review run crashed)─▶ submitted            (re-review; bou
 queued_for_merge ─take(merge engine, SINGLE SLOT)─▶ merging
 merging ─clean─▶ merged                               (→ wake lead)
 merging ─textual or semantic conflict─▶ needs_human
-needs_human ─resolve(human/architect)─▶ queued_for_merge   (branch is fine as-is)
-needs_human ─rework(human)─▶ in_progress                 (attempts reset to 0)
+needs_human ─resolve(human)─▶ queued_for_merge   (approved branch, fine as-is)
+needs_human ─rework(human, with notes)─▶ in_progress     (attempts reset to 0)
 (attempts exceeded on review/fail/scope request) ─▶ needs_human
 any non-terminal except merging ─cancel(lead)─▶ cancelled   (cascades to dependents)
 on restart: task in `merging` ─merge commit on main─▶ merged
@@ -156,6 +156,20 @@ claimed, and would otherwise sit `open` forever. `rework` resets the retry budge
 because a human's judgment has replaced the loop that exhausted it; `resolve` is for a
 branch that needs no further edits (e.g. the human fixed main), `rework` for one that
 does (e.g. escalated after failing review).
+
+**Human rulings** (`coordinator/escalation.py`; `cli.py resolve | rework | cancel`).
+These are the only way a task leaves `needs_human`.
+- `resolve` is refused unless the task's latest non-human run is an approving review,
+  i.e. the branch has not changed since a review approved it. That is the case for a
+  task that escalated at merge time. A branch that failed review can therefore never
+  be requeued for merge without a new approving review (invariant 5); its rulings are
+  `rework` or `cancel`. The merge-time full suite still runs after a `resolve`.
+- `rework` requires notes, which reach the worker as its feedback ("From a human: …"),
+  since without new guidance it would repeat the loop that escalated.
+- `cancel` cascades to dependents as above.
+
+Each ruling is recorded as a `runs` row (role `human`, cost 0). `status` lists the
+rulings that apply to each escalated task.
 
 **Retry bound.** `attempts` bounds the review loop, failed worker runs (`fail`), and
 scope requests (`request_scope`: each grant buys another worker run, so a task that
@@ -231,6 +245,12 @@ WHERE id = (
 file_scope non-overlap check is the conflict-prevention core: two in-flight workers
 never touch the same files, so most merges are trivial. (v1 sqlite is valid only while
 a single orchestrator process is the sole writer.)
+
+**Writer lock** (`store/lock.py`). Every command that writes task state (`run`,
+`add-goal`, `resolve`, `rework`, `cancel`) first takes an exclusive `flock` on
+`<state-dir>/writer.lock`. A second writer is refused (`StoreBusy`) instead of racing
+the running orchestrator. Readers (`status`, `inspect`) take no lock, and `status`
+shows who holds it. The OS releases the lock when its holder exits, crash included.
 
 **v1 implementation** (`store/sqlite.py`): the SQL above is the Postgres target. In
 sqlite the claim is a read-check-write inside one `BEGIN IMMEDIATE` transaction, with

@@ -78,3 +78,57 @@ def test_plan_refuses_an_existing_out_file_before_anything_else(tmp_path, capsys
     assert cli.main(["plan", "--repo", str(repo), "--goal", "g", "--out", str(out),
                      "--state-dir", str(tmp_path / "s")]) == 1
     assert "exists" in capsys.readouterr().err
+
+
+def _escalated_store(state):
+    """A state dir with task 1 escalated after review rejections."""
+    from engine.states import Event, State
+    from store import TaskStore
+
+    assert cli.main(["add-goal", "--state-dir", state, "--plan", str(EXAMPLES / "case1.json")]) == 0
+    s = TaskStore(Path(state) / "seam.sqlite")
+    s.claim("w1", "backend")
+    s.transition(1, Event.START)
+    while s.get(1).state is not State.NEEDS_HUMAN:
+        s.transition(1, Event.SUBMIT)
+        s.transition(1, Event.PICKUP)
+        s.transition(1, Event.REQUEST_CHANGES, review_notes="still wrong")
+    s.close()
+
+
+def test_status_shows_the_rulings_that_apply(tmp_path, capsys):
+    state = str(tmp_path / "s")
+    _escalated_store(state)
+    capsys.readouterr()
+    assert cli.main(["status", "--state-dir", state]) == 0
+    out = capsys.readouterr().out
+    assert "ESCALATED task 1" in out
+    assert "rework --task 1" in out and "cancel --task 1" in out
+    assert "resolve --task 1" not in out  # it failed review: resolve does not apply
+
+
+def test_rework_and_cancel_from_the_cli(tmp_path, capsys):
+    state = str(tmp_path / "s")
+    _escalated_store(state)
+    assert cli.main(["resolve", "--state-dir", state, "--task", "1"]) == 1
+    assert "no approving review" in capsys.readouterr().err
+    with pytest.raises(SystemExit):  # --notes is required for rework
+        cli.main(["rework", "--state-dir", state, "--task", "1"])
+    assert cli.main(["rework", "--state-dir", state, "--task", "1", "--notes", "hint"]) == 0
+    assert "in_progress" in capsys.readouterr().out
+    assert cli.main(["cancel", "--state-dir", state, "--task", "2"]) == 0
+    assert "cancelled: task 2" in capsys.readouterr().out
+
+
+def test_writers_are_refused_while_another_holds_the_state_dir(tmp_path, capsys):
+    from store.lock import writer_lock
+
+    state = tmp_path / "s"
+    _escalated_store(str(state))
+    with writer_lock(state, "run"):
+        assert cli.main(["cancel", "--state-dir", str(state), "--task", "1"]) == 1
+        assert "StoreBusy" in capsys.readouterr().err
+        assert cli.main(["add-goal", "--state-dir", str(state), "--goal", "g2",
+                         "--plan", str(EXAMPLES / "case2.json")]) == 1
+        assert cli.main(["status", "--state-dir", str(state)]) == 0  # readers are fine
+        assert "writing now: run, pid" in capsys.readouterr().out

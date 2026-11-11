@@ -335,3 +335,29 @@ def test_in_progress_task_of_an_absent_worker_is_adopted(tmp_path):
     report = orch.run()
     assert report.ids_in(State.MERGED) == [t.id]
     assert store.get(t.id).owner == "w1" and len(w.runs) == 1
+
+def test_human_rework_reaches_a_worker_of_a_later_run_and_merges(tmp_path):
+    """Escalated after 3 rejections; a human reworks it with notes; the next run has
+    a different worker, which adopts the task, gets the notes, and the task merges
+    only after a fresh approving review."""
+    from coordinator import escalation
+
+    scripts = {"x": lambda task, wt, n: {"x.py": f"X = {n}\n"}}  # new content each run
+    rejecting = ScriptedReviewer([Verdict(False, "no")] * 3)
+    _, store, lead, orch = build(tmp_path, [ScriptedWorker("w1", scripts)], rejecting)
+    t = add(store, "x", ["x.py"])
+    orch.run()
+    assert store.get(t.id).state is State.NEEDS_HUMAN
+    assert [r.outcome for r in store.runs(t.id) if r.role != "worker"] == ["reject"] * 3
+    with pytest.raises(escalation.EscalationError):
+        escalation.resolve(store, t.id)  # failed review: only rework or cancel
+    escalation.rework(store, t.id, "name it X")
+
+    w2 = ScriptedWorker("w2", scripts)
+    orch2 = Orchestrator(store, lead, orch.repo, [w2], orch.gate, orch.merger,
+                         orch.worktree_root)
+    orch2.gate.reviewer = ScriptedReviewer()  # approves
+    report = orch2.run()
+    assert report.ids_in(State.MERGED) == [t.id]
+    assert w2.runs == [(t.id, "From a human: name it X")]
+    assert store.get(t.id).owner == "w2"

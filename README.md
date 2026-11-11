@@ -120,6 +120,12 @@ branch is not checked out (`make_repo.sh` leaves `HEAD` detached).
 | `cli.py add-goal --plan plan.json` | load a plan without running it |
 | `cli.py status` | task states, the merge slot and queue, escalations, cost and tokens |
 | `cli.py inspect --task N` | one task: branch, diff, every run with its cost, rejection notes |
+| `cli.py resolve --task N` | requeue an escalated task whose branch a review approved (it escalated at merge); the full suite still runs |
+| `cli.py rework --task N --notes "…"` | send an escalated task back to a worker with your guidance |
+| `cli.py cancel --task N` | cancel a task and everything that depends on it |
+
+Commands that change task state refuse to run while another one (usually a `run`)
+holds the state dir, so a human ruling never races a running team.
 
 All take `--state-dir` (default `./.seam`). Useful `run` options:
 

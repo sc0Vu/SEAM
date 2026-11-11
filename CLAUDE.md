@@ -100,6 +100,7 @@ python cli.py run --repo <clone> --plan <plan.json>  # launch a team on a review
 python cli.py add-goal --plan <plan.json>            # load a plan without running
 python cli.py status                                 # task states, merge queue, escalations
 python cli.py inspect --task <id>                    # one task's branch, diff, review notes
+python cli.py resolve|rework|cancel --task <id>      # a human's ruling on an escalation
 pytest && ruff check .                               # test + lint gate (use .venv/bin/)
 ```
 All take `--state-dir` (default `./.seam`). The real-agent v1 run is
