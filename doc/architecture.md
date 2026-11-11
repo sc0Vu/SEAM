@@ -202,8 +202,8 @@ no model), `agent_id`, `outcome`, `cost_usd`, tokens split into uncached input,
 cache reads, cache writes, and output, as the runtime reports them (Claude Code's
 `modelUsage`, summed over every model a run used), and a review's `notes`, so a
 rejection's reasons survive after a later approval overwrites the task's
-`review_notes`. Older state dirs gain the column on open. It is accounting only: no state
-transition reads it. `run` prints totals by role, `status` too, `inspect` per run.
+`review_notes`. Older state dirs gain the column on open. No state transition reads it;
+the lead sums it to resume a goal's budget (§8). `run` prints totals by role, `status` too, `inspect` per run.
 
 ---
 
@@ -361,8 +361,10 @@ gate rejected as out-of-scope edits; fixed by `ARTIFACT_EXCLUDES` (§5). Branche
 committed before that fix cannot drop the bytecode (deletions are excluded too) and
 need a fresh run.
 
-The v1 lead is a hand-written plan (`coordinator/lead.py`); its budget is per `run`
-invocation, in memory. A goal loads once per store: a second load of the same goal id
+The v1 lead is a hand-written plan (`coordinator/lead.py`). Its budget covers the
+goals of the run's unfinished tasks and starts from what the `runs` table already
+records for them (`goal_budget`), so restarting `run` never resets the cap: every
+charge to a budget has a `runs` row. Planning cost has no task, so it is not in it. A goal loads once per store: a second load of the same goal id
 raises `GoalAlreadyLoaded` rather than duplicating tasks (duplicates would hold the
 same file_scopes and could never be claimed).
 
@@ -651,7 +653,7 @@ both v1 cases passed; they have, §8.)
   inside them; `blocked_by` for every task that uses another task's new API; a frozen
   contract in `spec_ref` for any shared-interface change; an indivisible feature is one
   task; report scopes that overlap (they will serialize).
-- *Cost* is charged to the goal's budget.
+- *Cost* is capped by `plan --budget-usd` and reported with the plan.
 
 **Built:** `coordinator/planner.py` (`Planner`, `PlanDraft`, `PlannerFailed`),
 `coordinator/lead.py:plan_from_dict` (the shared validation), `planners/claude_code.py`
@@ -659,8 +661,8 @@ both v1 cases passed; they have, §8.)
 `cli.py plan`, which exports the target to the state dir, starts the credential proxy,
 runs the planner, and writes the plan JSON with the goal text and the planner's notes
 (`goal_text`, `planner_notes`, ignored by `load_plan`). The `plan` command has its own
-`--budget-usd` cap; budgets are per invocation (§8), so planning cost is reported, not
-carried into `run`.
+`--budget-usd` cap; planning has no task to record a `runs` row against (§8), so its
+cost is reported, not carried into `run`.
 
 **Measurement.** Give the planner the bench-1 and bench-2 goals in prose; compare its
 plans with the hand-written ones (tasks, scopes, deps); then run its plans unedited

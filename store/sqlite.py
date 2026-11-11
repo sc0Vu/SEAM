@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -284,6 +284,18 @@ class TaskStore:
                  u.input_tokens, u.cache_read_tokens, u.cache_write_tokens, u.output_tokens,
                  run.notes, run.probes),
             )
+
+    def spent_usd(self, goal_ids: Iterable[str]) -> float:
+        """Dollars already recorded for these goals' tasks. Every charge to a budget
+        has a `runs` row, so this is the spend a resumed run starts from."""
+        goals = list(goal_ids)
+        if not goals:
+            return 0.0
+        marks = ", ".join("?" * len(goals))
+        row = self._db.execute(
+            "SELECT COALESCE(SUM(r.cost_usd), 0) FROM runs r JOIN tasks t ON t.id = r.task_id"
+            f" WHERE t.goal_id IN ({marks})", goals).fetchone()
+        return float(row[0])
 
     def runs(self, task_id: int | None = None) -> list[RunRecord]:
         """Recorded runs, oldest first; all of them, or one task's."""

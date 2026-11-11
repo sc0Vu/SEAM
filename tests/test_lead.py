@@ -4,6 +4,7 @@ import pytest
 
 from coordinator.lead import Budget, GoalAlreadyLoaded, Lead, PlanError, load_plan
 from engine.states import State
+from engine.task import TaskSpec
 from store import TaskStore
 
 
@@ -67,3 +68,17 @@ def test_loading_a_goal_twice_is_refused_and_creates_nothing(tmp_path):
     assert len(store.list()) == 2
     Lead(store, "g2", Budget(1.0)).submit_plan(plan)  # another goal is fine
     assert len(store.list()) == 4
+
+
+def test_goal_budget_starts_from_recorded_spend():
+    from coordinator.lead import goal_budget
+    from engine.usage import RunRecord, Usage
+
+    store = TaskStore()
+    t = store.create(TaskSpec(goal_id="g", type="backend", description="d",
+                              file_scope=("a/**",)))
+    store.record_run(RunRecord(t.id, "worker", "w", "diff", 0.75, Usage()))
+    budget = goal_budget(store, 1.0, ["g"])
+    assert budget.spent_usd == 0.75 and not budget.exhausted
+    budget.charge(0.25)
+    assert budget.exhausted  # a restarted run cannot spend the ceiling twice

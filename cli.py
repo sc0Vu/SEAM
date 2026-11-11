@@ -14,7 +14,7 @@ import tempfile
 from collections import Counter
 from pathlib import Path
 
-from coordinator.lead import Budget, Lead, load_plan
+from coordinator.lead import Budget, Lead, goal_budget, load_plan
 from engine.errors import SeamError
 from engine.git import GitRepo
 from engine.merge import MergeEngine
@@ -179,7 +179,10 @@ def _run_team(args, store, repo, tests, scratch, proxy) -> None:
         raise PreflightError("no unfinished tasks: pass --plan or run add-goal first")
     reviewer = ClaudeCodeReviewer(model=args.reviewer_model or args.model,
                                   probes=args.review_probes)
-    lead = Lead(store, args.goal or "goal", Budget(args.budget_usd))
+    # The cap covers the goals this run works on, including what earlier runs spent.
+    goals = sorted({t.spec.goal_id for t in store.list() if t.state not in TERMINAL})
+    budget = goal_budget(store, args.budget_usd, goals)
+    lead = Lead(store, args.goal or (goals[0] if len(goals) == 1 else "goal"), budget)
     orch = Orchestrator(
         store, lead, repo, workers,
         gate=ReviewGate(repo, tests, reviewer, target=args.target, scratch=scratch,
@@ -190,7 +193,8 @@ def _run_team(args, store, repo, tests, scratch, proxy) -> None:
         worktree_root=args.state_dir / "worktrees",
         target=args.target,
     )
-    print(f"running {len(workers)} worker(s) on {args.repo} (budget ${args.budget_usd:.2f})")
+    print(f"running {len(workers)} worker(s) on {args.repo} (budget ${args.budget_usd:.2f}"
+          + (f", ${budget.spent_usd:.2f} already spent" if budget.spent_usd else "") + ")")
     report = orch.run()
     _print_tasks(report.tasks)
     print(f"\nspent ${report.spent_usd:.2f}"

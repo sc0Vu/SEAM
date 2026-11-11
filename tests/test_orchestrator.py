@@ -304,3 +304,18 @@ def test_scope_request_denied_before_a_restart_is_retried(tmp_path):
     report = orch.run()
     assert report.ids_in(State.MERGED) == [a.id]
     assert store.get(a.id).spec.file_scope == ("mine.py", "shared.py")
+
+
+def test_budget_resumed_from_the_store_caps_a_restarted_run(tmp_path):
+    from coordinator.lead import goal_budget
+    from engine.usage import RunRecord, Usage
+
+    w = ScriptedWorker("w1", {"a": writes({"a.py": ""})})
+    _, store, lead, orch = build(tmp_path, [w])
+    t = add(store, "a", ["a.py"])
+    store.record_run(RunRecord(t.id, "worker", "w0", "failed", 1.0, Usage()))  # run 1
+    lead.budget = goal_budget(store, 1.0, ["g"])
+
+    report = orch.run()
+    assert report.budget_exhausted and w.runs == []
+    assert store.get(t.id).state is State.OPEN

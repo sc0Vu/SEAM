@@ -7,6 +7,7 @@ LLM goal decomposition comes later behind the same `Lead` surface.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -36,6 +37,12 @@ class Budget:
     @property
     def exhausted(self) -> bool:
         return self.spent_usd >= self.limit_usd
+
+
+def goal_budget(store: TaskStore, limit_usd: float, goal_ids: Iterable[str]) -> Budget:
+    """The budget for a run of these goals, starting from what earlier runs already
+    spent on them (from the `runs` table), so restarting `run` never resets the cap."""
+    return Budget(limit_usd, store.spent_usd(goal_ids))
 
 
 @dataclass(frozen=True)

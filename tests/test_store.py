@@ -241,6 +241,19 @@ def test_granted_request_leaves_nothing_pending(store):
     assert store.grant_scope(a.id, ["c/x.py"]).pending_scope == ()
 
 
+def test_spent_usd_sums_recorded_runs_per_goal(store):
+    from engine.usage import RunRecord, Usage
+
+    t1 = store.create(spec(["a/**"]))
+    t2 = store.create(TaskSpec(goal_id="other", type="backend", description="d",
+                               file_scope=("b/**",)))
+    for task, cost in ((t1, 0.25), (t1, 0.5), (t2, 2.0)):
+        store.record_run(RunRecord(task.id, "worker", "w", "diff", cost, Usage()))
+    assert store.spent_usd(["g1"]) == pytest.approx(0.75)
+    assert store.spent_usd(["g1", "other"]) == pytest.approx(2.75)
+    assert store.spent_usd([]) == 0.0
+
+
 def test_old_task_table_gains_pending_scope(tmp_path):
     import sqlite3
 
