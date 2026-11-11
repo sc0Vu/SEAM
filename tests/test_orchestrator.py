@@ -319,3 +319,19 @@ def test_budget_resumed_from_the_store_caps_a_restarted_run(tmp_path):
     report = orch.run()
     assert report.budget_exhausted and w.runs == []
     assert store.get(t.id).state is State.OPEN
+
+
+def test_in_progress_task_of_an_absent_worker_is_adopted(tmp_path):
+    """A restart with fewer workers: task left in_progress by `ghost`, who is not in
+    this run. A free worker of the same type adopts it instead of leaving it stuck."""
+    w = ScriptedWorker("w1", {"x": writes({"x.py": "X = 1\n"})})
+    repo, store, _, orch = build(tmp_path, [w])
+    t = add(store, "x", ["x.py"])
+    store.claim("ghost", "backend")
+    path = tmp_path / "worktrees" / f"task-{t.id}"
+    GitRepo(repo).add_worktree(path, f"seam/task-{t.id}", "main")
+    store.transition(t.id, Event.START, branch=f"seam/task-{t.id}", worktree_path=str(path))
+
+    report = orch.run()
+    assert report.ids_in(State.MERGED) == [t.id]
+    assert store.get(t.id).owner == "w1" and len(w.runs) == 1

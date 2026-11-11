@@ -95,7 +95,9 @@ and the *only* writer of task state: worker and review runs execute concurrently
 a thread pool and hand back results; the loop thread applies every transition (the
 condition that keeps sqlite valid). Each pass: drain the merge queue (serially),
 retry denied scope requests that merges may have freed, dispatch idle workers (rework
-on their own in_progress tasks first, then a fresh claim → new worktree + branch
+on their own in_progress tasks first, then adopt an in_progress task of their type
+whose owner is not in this run — after a restart with fewer workers, or a human's
+`rework` — via `TaskStore.reassign`, then a fresh claim → new worktree + branch
 `seam/task-<id>` off the target), start one review if the reviewer is free; then wait
 for any run to finish. A worker's changes are committed on its branch by the
 orchestrator, and the diff stored at submit is git's (`target...branch`), not the

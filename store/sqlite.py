@@ -192,6 +192,21 @@ class TaskStore:
                 )
         return self.get(task_id)
 
+    def reassign(self, task_id: int, owner: str) -> Task:
+        """Hand an `in_progress` task to another worker (no state change).
+
+        For a run whose workers do not include the task's owner (a restart with fewer
+        workers, or a task a human sent back with `rework`). The branch, scope and
+        attempts stay the task's; only who continues it changes. Compare-and-swap on
+        `in_progress`, so a task that moved on meanwhile is never touched.
+        """
+        with self._tx() as db:
+            cur = db.execute("UPDATE tasks SET owner = ? WHERE id = ? AND state = ?",
+                             (owner, task_id, State.IN_PROGRESS))
+            if cur.rowcount != 1:
+                raise StaleState(task_id)
+        return self.get(task_id)
+
     def grant_scope(self, task_id: int, extra_globs: list[str]) -> Task:
         """Grant a scope-expansion request iff the expanded scope stays disjoint from
         every other scope-holding task (invariant 3).

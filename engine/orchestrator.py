@@ -117,12 +117,20 @@ class Orchestrator:
             jobs[fut] = _Job("work", task.id, w)
 
     def _rework_for(self, w: Worker, busy: set[int]) -> Task | None:
-        """An in_progress task of this worker's that needs another run (after
-        changes_requested, a failed run, or a granted scope request)."""
+        """An in_progress task that needs another run (after changes_requested, a
+        failed run, a granted scope request, or a human's `rework`): this worker's
+        own first, else one of its type whose owner is not in this run, which it
+        adopts (otherwise that task would wait forever for a worker that isn't here)."""
+        mine = {x.id for x in self.workers}
+        orphan = None
         for t in self.store.list(State.IN_PROGRESS):
-            if t.owner == w.id and t.id not in busy:
+            if t.id in busy:
+                continue
+            if t.owner == w.id:
                 return t
-        return None
+            if orphan is None and t.owner not in mine and t.spec.type == w.type:
+                orphan = t
+        return self.store.reassign(orphan.id, w.id) if orphan else None
 
     def _claim_for(self, w: Worker) -> Task | None:
         task = self.store.claim(w.id, w.type)
