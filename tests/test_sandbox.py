@@ -1,3 +1,4 @@
+import os
 import shutil
 import subprocess
 import tempfile
@@ -12,6 +13,7 @@ from sandbox.docker import (
     CredentialProxyContainer,
     DockerSandbox,
     ProxyError,
+    host_user,
 )
 
 
@@ -58,6 +60,22 @@ def test_worker_options_pass_env_by_name_and_overlay_readonly(tmp_path):
     assert f"{tmp_path.resolve()}/.git:/work/.git:ro" in argv
     assert not any("absent" in a for a in argv)  # missing paths are skipped
     assert "--user 1000:1000" in joined
+    assert "HOME=/tmp" in argv  # that uid has no home in the image
+
+
+def test_no_user_keeps_image_user_and_home(tmp_path):
+    argv = DockerSandbox().command("true", tmp_path, "seam-x")
+    assert "--user" not in argv and not any(a.startswith("HOME=") for a in argv)
+
+
+def test_explicit_home_is_not_overridden(tmp_path):
+    argv = DockerSandbox(user="5:5", env_values={"HOME": "/h"}).command("true", tmp_path, "x")
+    assert "HOME=/h" in argv and "HOME=/tmp" not in argv
+
+
+def test_host_user_only_on_linux():
+    assert host_user("darwin") is None
+    assert host_user("linux") == f"{os.getuid()}:{os.getgid()}"
 
 
 IMAGE = "python:3.13-slim"  # any small image works for these behavior checks
@@ -93,6 +111,19 @@ def test_exit_code_and_output_come_back(workdir, image):
 def test_no_network(workdir, image):
     cmd = "python -c \"import socket; socket.create_connection(('1.1.1.1', 53), 3)\""
     assert not DockerSandbox(image).run(cmd, workdir, timeout=120).ok
+
+
+@needs_docker
+def test_host_user_can_write_workdir_and_home(workdir, image):
+    """The Linux uid fix: as the host uid, a container writes the work dir (files end
+    up owned by the host user) and has a writable HOME. Explicit uid, so it runs on
+    any host; on Linux this is exactly what `host_user()` returns."""
+    user = f"{os.getuid()}:{os.getgid()}"
+    workdir.chmod(0o700)  # only the host user may write it
+    res = DockerSandbox(image, user=user).run(
+        "touch made && mkdir -p $HOME/.claude && echo ok", workdir, timeout=120)
+    assert res.ok, res.output
+    assert (workdir / "made").stat().st_uid == os.getuid()
 
 
 @needs_docker

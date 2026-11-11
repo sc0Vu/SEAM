@@ -25,7 +25,7 @@ from engine.usage import format_usage, totals_by_role
 from planners.claude_code import ClaudeCodePlanner, plan_to_json
 from reviewer.claude_code import ClaudeCodeReviewer
 from reviewer.gate import DEFAULT_PROBE_CMD, ReviewGate
-from sandbox.docker import DEFAULT_IMAGE, CredentialProxyContainer, DockerSandbox
+from sandbox.docker import DEFAULT_IMAGE, CredentialProxyContainer, DockerSandbox, host_user
 from sandbox.proxy import CREDENTIAL_KINDS
 from store import TaskStore
 from workers.claude_code import ClaudeCodeWorker
@@ -107,7 +107,7 @@ def preflight_sandbox(args: argparse.Namespace, sandbox: DockerSandbox) -> None:
 
 def check_proxy(proxy: CredentialProxyContainer, image: str, probe_dir: Path) -> None:
     """From the worker network: the proxy must answer and nothing else be reachable."""
-    box = DockerSandbox(image, network=proxy.network)
+    box = DockerSandbox(image, network=proxy.network, user=host_user())
     out = box.run(_PROXY_PROBE.format(health=proxy.health_url), probe_dir, timeout=120).output
     if "proxy ok" not in out:
         raise PreflightError(f"credential proxy not reachable from {proxy.network}: {out[-300:]}")
@@ -123,14 +123,14 @@ def cmd_plan(args: argparse.Namespace) -> None:
     if out.exists():
         raise PreflightError(f"{out} exists; pick another --out")
     credential = select_credential()
-    preflight_sandbox(args, DockerSandbox(args.image))
+    preflight_sandbox(args, DockerSandbox(args.image, user=host_user()))
     scratch = args.state_dir / "tmp"
     with tempfile.TemporaryDirectory(prefix="seam-plan-", dir=scratch) as d:
         repo.export(repo.rev_parse(args.target), Path(d))
         with CredentialProxyContainer(credential, args.image) as proxy:
             check_proxy(proxy, args.image, scratch)
             box = DockerSandbox(args.image, network=proxy.network,
-                                env_values=proxy.worker_env())
+                                env_values=proxy.worker_env(), user=host_user())
             planner = ClaudeCodePlanner(box, model=args.model, max_budget_usd=args.budget_usd)
             print(f"planning on {args.repo}@{args.target} (cap ${args.budget_usd:.2f})")
             draft = planner.plan(args.goal, Path(d))
@@ -151,7 +151,7 @@ def cmd_plan(args: argparse.Namespace) -> None:
 
 def cmd_run(args: argparse.Namespace) -> None:
     repo = GitRepo(args.repo)
-    tests = DockerSandbox(args.image)
+    tests = DockerSandbox(args.image, user=host_user())
     credential = preflight(args, repo, tests)
     if args.plan:
         cmd_add_goal(args)
@@ -167,7 +167,8 @@ def cmd_run(args: argparse.Namespace) -> None:
 def _run_team(args, store, repo, tests, scratch, proxy) -> None:
     # Workers see only the proxy URL and a placeholder credential (doc §10).
     worker_box = DockerSandbox(args.image, network=proxy.network,
-                               env_values=proxy.worker_env(), readonly=(".git",))
+                               env_values=proxy.worker_env(), readonly=(".git",),
+                               user=host_user())
     types = sorted({t.spec.type for t in store.list() if t.state not in TERMINAL})
     workers = [
         ClaudeCodeWorker(f"{ty}-{i}", ty, worker_box, model=args.model,

@@ -11,7 +11,9 @@ worker container (invariant 13).
 
 from __future__ import annotations
 
+import os
 import subprocess
+import sys
 import uuid
 from collections.abc import Callable
 from pathlib import Path
@@ -24,6 +26,21 @@ DEFAULT_IMAGE = "seam-sandbox"  # built from sandbox/Dockerfile
 WORKER_NETWORK = "seam-workers"  # --internal: no route out except via the proxy
 PROXY_PORT = 8080
 PROXY_SCRIPT = Path(__file__).with_name("proxy.py")  # mounted read-only into the proxy
+CONTAINER_HOME = "/tmp"  # writable for any uid; HOME when running as the host user
+
+
+def host_user(platform: str = sys.platform) -> str | None:
+    """The `--user` for containers that write the host's work dirs, or None to keep
+    the image's user (`node`, uid 1000).
+
+    On Linux a bind mount keeps host ownership, so a container user with another uid
+    cannot write the worktree (and git refuses it as dubious ownership): run as the
+    host uid:gid instead. macOS (Colima, Docker Desktop) maps ownership in its file
+    sharing, so the image's user already works there and is left alone.
+    """
+    if platform.startswith("linux"):
+        return f"{os.getuid()}:{os.getgid()}"
+    return None
 
 
 class DockerSandbox:
@@ -50,7 +67,9 @@ class DockerSandbox:
         """`readonly`: paths under the work dir re-mounted read-only (e.g. a worktree's
         `.git` file, so a worker cannot repoint host git at a hostile config).
         `env_names` pass host env vars through by name; `env_values` set fixed values,
-        which appear in argv, so they must never be secrets (placeholders, URLs)."""
+        which appear in argv, so they must never be secrets (placeholders, URLs).
+        `user`: run as this uid:gid (see `host_user`); HOME then defaults to a
+        directory any uid can write, since that uid has no home in the image."""
         self.image = image
         self.memory = memory
         self.pids_limit = pids_limit
@@ -82,6 +101,8 @@ class DockerSandbox:
             argv += ["-e", f"{k}={v}"]
         if self.user:
             argv += ["--user", self.user]
+            if "HOME" not in self.env_values:
+                argv += ["-e", f"HOME={CONTAINER_HOME}"]
         return [*argv, "-w", "/work", self.image, "sh", "-c", cmd]
 
     def run(self, cmd: str, workdir: Path, timeout: float) -> RunResult:

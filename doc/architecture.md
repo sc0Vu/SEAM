@@ -478,10 +478,12 @@ failing test) is open work.
   partitionable work" are the controls.
 - **Toy-repo success ≠ large-repo success** — the honest benchmark is escalation rate
   on a real codebase.
-- **Container uid on Linux.** The sandbox image runs as `node` (uid 1000). On macOS
-  (Colima) file sharing maps ownership, but on a Linux host whose user is another uid,
-  workers cannot write their worktrees. Not yet handled (e.g. run containers as the
-  host uid with a writable `HOME`); CI only exercises read access.
+- **Container uid on Linux — handled.** The sandbox image runs as `node` (uid 1000).
+  On macOS (Colima, Docker Desktop) file sharing maps ownership, so that works. On
+  Linux a bind mount keeps host ownership, so every container that touches a host
+  work dir (workers, the planner, test runs) runs as the host `uid:gid`
+  (`sandbox.docker.host_user`) with `HOME=/tmp`, since that uid has no home in the
+  image. A real-container test checks the write and the resulting file owner.
 - **Predicted file_scope can be wrong** — the scope-expansion protocol (§5) is what
   keeps invariant 2 true when a prediction misses; watch how often it fires.
 
