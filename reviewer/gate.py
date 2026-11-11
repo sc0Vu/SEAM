@@ -122,6 +122,13 @@ class ReviewGate:
                 self.repo.export(self.repo.rev_parse(branch), Path(d))
                 result = self.sandbox.run(task.spec.test_cmd, Path(d), self.test_timeout)
             test_output = result.output[-_OUTPUT_TAIL:]
+            if result.env_failure:
+                return Verdict(False, (
+                    f"the task's test command could not run in the sandbox (exit "
+                    f"{result.exit_code}): the sandbox lacks a tool, so nothing was "
+                    "tested and the change was not judged. Fix the image (e.g. a "
+                    "custom --image with the toolchain), then `rereview` the task.\n"
+                    f"{test_output}"), environment=True)
             if not result.ok:
                 why = "timed out" if result.timed_out else f"failed (exit {result.exit_code})"
                 return Verdict(False, f"task tests {why} on the branch:\n{test_output}")

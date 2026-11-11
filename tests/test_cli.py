@@ -147,3 +147,10 @@ def test_amend_from_the_cli_and_status_shows_the_link(tmp_path, capsys):
     assert cli.main(["status", "--state-dir", state]) == 0
     assert f"goal 'v2' amends {old!r}" in capsys.readouterr().out
     assert cli.main(args) == 1  # v2 is loaded now: a clean error, nothing changes
+
+
+def test_rereview_from_the_cli_only_after_an_environment_failure(tmp_path, capsys):
+    state = str(tmp_path / "s")
+    _escalated_store(state)  # escalated by review rejections, not the environment
+    assert cli.main(["rereview", "--state-dir", state, "--task", "1"]) == 1
+    assert "nothing to re-review" in capsys.readouterr().err

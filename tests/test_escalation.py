@@ -126,3 +126,35 @@ def test_cancel_refuses_a_task_mid_merge(store):
     store.transition(t.id, Event.TAKE)
     with pytest.raises(IllegalTransition):
         escalation.cancel(store, t.id)
+
+
+def escalated_by_environment(store):
+    """The task's tests could not run in the sandbox (e.g. `go: not found`)."""
+    t = new(store)
+    store.claim("w1", "backend")
+    store.transition(t.id, Event.START)
+    run(store, t.id, "worker", "diff")
+    store.transition(t.id, Event.SUBMIT)
+    store.transition(t.id, Event.PICKUP)
+    run(store, t.id, "gate", "env_fail")
+    store.transition(t.id, Event.ESCALATE, review_notes="go: not found")
+    return store.get(t.id)
+
+
+def test_rereview_sends_the_unchanged_branch_back_to_review(store):
+    t = escalated_by_environment(store)
+    assert (t.state, t.attempts) == (State.NEEDS_HUMAN, 0)
+    assert not escalation.approved_as_is(store, t.id)  # never judged: no resolve
+    back = escalation.rereview(store, t.id, "image now has Go")
+    assert (back.state, back.attempts) == (State.SUBMITTED, 0)
+    assert store.runs(t.id)[-1].outcome == "rereview"
+
+
+@pytest.mark.parametrize("make", [escalated_by_review, escalated_at_merge])
+def test_rereview_is_only_for_environment_failures(store, make):
+    """A rejected or merge-escalated branch was judged: re-reviewing it would let a
+    human skip a verdict, so rereview is refused there."""
+    t = make(store)
+    with pytest.raises(EscalationError, match="nothing to re-review"):
+        escalation.rereview(store, t.id)
+    assert store.get(t.id).state is State.NEEDS_HUMAN

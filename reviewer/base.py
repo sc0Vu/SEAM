@@ -39,13 +39,17 @@ class Probe:
 @dataclass(frozen=True)
 class Verdict:
     """`usage` is None when no model ran (the gate's deterministic checks decided).
-    `probes` are the reviewer's adversarial tests; the gate decides what they prove."""
+    `probes` are the reviewer's adversarial tests; the gate decides what they prove.
+    `environment` marks a rejection caused by the sandbox, not the change (the task's
+    tests could not run at all): the task escalates instead of going back to its
+    worker, who could not fix it."""
 
     approve: bool
     notes: str
     cost_usd: float = 0.0
     usage: Usage | None = None
     probes: tuple[Probe, ...] = ()
+    environment: bool = False
 
 
 @runtime_checkable

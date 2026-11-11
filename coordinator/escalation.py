@@ -9,6 +9,10 @@ A task in `needs_human` stays there until a person rules on it. The three ruling
   resolved, so no branch merges without an approving review.
 - `rework`: send the task back to its worker and branch with the human's notes as
   feedback; the retry budget restarts (the human replaced the loop that exhausted it).
+- `rereview`: the task escalated because its tests could not run in the sandbox
+  (an environment fault, e.g. a missing toolchain); once the human has fixed the
+  environment, send the unchanged branch back to review. Allowed only when the latest
+  machine verdict was that environment failure, so it can never skip a review.
 - `cancel`: drop the task (and, by cascade, every task that depends on it).
 
 Every ruling is recorded in the `runs` table (role `human`, no cost), so the history
@@ -55,6 +59,19 @@ def rework(store: TaskStore, task_id: int, notes: str) -> Task:
     return done
 
 
+def rereview(store: TaskStore, task_id: int, notes: str = "") -> Task:
+    """Send an escalated task's unchanged branch back to review after an environment
+    failure has been fixed."""
+    task = _escalated(store, task_id)
+    if not env_failed(store, task_id):
+        raise EscalationError(
+            f"task {task_id} did not escalate because its tests could not run, so there "
+            "is nothing to re-review; use `resolve`, `rework` with notes, or `cancel`")
+    done = store.transition(task.id, Event.REREVIEW)
+    _record(store, task_id, "rereview", notes)
+    return done
+
+
 def cancel(store: TaskStore, task_id: int, notes: str = "") -> list[Task]:
     """Cancel a task and every task that depends on it; return all it cancelled."""
     before = {t.id: t.state for t in store.list()}
@@ -70,6 +87,14 @@ def approved_as_is(store: TaskStore, task_id: int) -> bool:
     machine = [r for r in store.runs(task_id) if r.role != HUMAN]
     return bool(machine) and machine[-1].role in _REVIEW_ROLES \
         and machine[-1].outcome == "approve"
+
+
+def env_failed(store: TaskStore, task_id: int) -> bool:
+    """True if the latest non-human run on the task is a review that could not run
+    the task's tests (an environment failure): the branch has not been judged."""
+    machine = [r for r in store.runs(task_id) if r.role != HUMAN]
+    return bool(machine) and machine[-1].role in _REVIEW_ROLES \
+        and machine[-1].outcome == "env_fail"
 
 
 def _escalated(store: TaskStore, task_id: int) -> Task:

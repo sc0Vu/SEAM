@@ -126,7 +126,8 @@ retries all `blocked` tasks' requests, so a restart picks them up too.
 
 **Review gate** (`reviewer/gate.py`) — deterministic checks before any model is paid:
 reviewer ≠ author, non-empty diff, every changed path inside file_scope, the task's
-own `test_cmd` green on the branch in the sandbox; only then the `Reviewer` runtime
+own `test_cmd` green on the branch in the sandbox (if it cannot run at all, the task
+escalates as an environment failure, §3); only then the `Reviewer` runtime
 judges the git diff against the spec, given the changed files as they were at the merge
 base (smallest first, up to `context_chars`, default 200k characters; larger or binary
 files are listed as omitted), so it checks the diff against the real surrounding code
@@ -154,11 +155,13 @@ in_review ─approve─▶ approved ─auto─▶ queued_for_merge
 in_review ─changes_requested─▶ in_progress            (same branch, new run; bounded)
 in_progress ─fail(worker run crashed/empty)─▶ in_progress  (re-run; bounded)
 in_review ─fail(review run crashed)─▶ submitted            (re-review; bounded)
+in_review ─escalate(task tests could not run)─▶ needs_human (no attempt counted)
 queued_for_merge ─take(merge engine, SINGLE SLOT)─▶ merging
 merging ─clean─▶ merged                               (→ wake lead)
 merging ─textual or semantic conflict─▶ needs_human
 needs_human ─resolve(human)─▶ queued_for_merge   (approved branch, fine as-is)
 needs_human ─rework(human, with notes)─▶ in_progress     (attempts reset to 0)
+needs_human ─rereview(human, env fixed)─▶ submitted     (same branch, judged again)
 (attempts exceeded on review/fail/scope request) ─▶ needs_human
 any non-terminal except merging ─cancel(lead)─▶ cancelled   (cascades to dependents)
 on restart: task in `merging` ─merge commit on main─▶ merged
@@ -174,7 +177,16 @@ because a human's judgment has replaced the loop that exhausted it; `resolve` is
 branch that needs no further edits (e.g. the human fixed main), `rework` for one that
 does (e.g. escalated after failing review).
 
-**Human rulings** (`coordinator/escalation.py`; `cli.py resolve | rework | cancel`).
+**Environment failures** (`RunResult.env_failure`: exit 127 command not found, 126 not
+executable, 125 the container failed to start) mean the task's tests never ran, which
+is the sandbox's fault and nothing a worker can fix. The gate then returns a verdict
+marked `environment` (recorded as run outcome `env_fail`), and the task `escalate`s
+straight to `needs_human` without counting an attempt and without paying a reviewer.
+Before this, such a rejection went back to the worker, whose next runs could only
+"change nothing" until the retry bound: seen on a Go project run in a Python-only image.
+
+**Human rulings** (`coordinator/escalation.py`; `cli.py resolve | rework | rereview |
+cancel`).
 These are the only way a task leaves `needs_human`.
 - `resolve` is refused unless the task's latest non-human run is an approving review,
   i.e. the branch has not changed since a review approved it. That is the case for a
@@ -183,6 +195,10 @@ These are the only way a task leaves `needs_human`.
   `rework` or `cancel`. The merge-time full suite still runs after a `resolve`.
 - `rework` requires notes, which reach the worker as its feedback ("From a human: …"),
   since without new guidance it would repeat the loop that escalated.
+- `rereview` is allowed only when the latest non-human run is an environment failure
+  (`env_fail`): the branch was never judged. After the human fixes the sandbox (e.g. a
+  custom `--image`), the unchanged branch goes back to `submitted` and through the
+  whole gate again, so it can never skip a review.
 - `cancel` cascades to dependents as above.
 
 Each ruling is recorded as a `runs` row (role `human`, cost 0). `status` lists the
@@ -801,6 +817,7 @@ escalations: Claude Code, Claude Desktop, or either one used remotely through it
 remote access. SEAM itself opens no port, so it adds no network attack surface.
 
 **Tools.** `status`, `inspect`, `show_plan` and `job` read only. `resolve`, `rework`,
+`rereview`,
 `cancel` and `amend` (with a saved plan) call `cli.main`, so they take the writer lock (§5) and obey the same
 rules (§3, human rulings). `save_plan` validates with `plan_from_dict` before saving.
 `draft_plan` and `run` start `cli.py` as a detached background process that logs to

@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+ENV_FAILURE_CODES = frozenset({125, 126, 127})
+
 
 @dataclass(frozen=True)
 class RunResult:
@@ -22,6 +24,14 @@ class RunResult:
     @property
     def ok(self) -> bool:
         return self.exit_code == 0 and not self.timed_out
+
+    @property
+    def env_failure(self) -> bool:
+        """The command could not run at all, so nothing was tested: the shell's 127
+        (command not found) or 126 (not executable), or docker's own 125 (the
+        container failed to start). A fault of the sandbox image or setup, never of
+        the code under test, so no agent can fix it."""
+        return not self.timed_out and self.exit_code in ENV_FAILURE_CODES
 
 
 @runtime_checkable

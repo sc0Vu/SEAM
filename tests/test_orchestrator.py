@@ -361,3 +361,43 @@ def test_human_rework_reaches_a_worker_of_a_later_run_and_merges(tmp_path):
     assert report.ids_in(State.MERGED) == [t.id]
     assert w2.runs == [(t.id, "From a human: name it X")]
     assert store.get(t.id).owner == "w2"
+
+
+def test_untestable_task_escalates_once_then_rereview_merges_it(tmp_path):
+    """The funda-cli case: the sandbox lacks the task's test tool. The task must
+    escalate after ONE worker run (no retries the worker can't fix), and once the
+    sandbox is fixed, `rereview` must get the same branch merged without rework."""
+    from coordinator import escalation
+    from sandbox.base import RunResult
+
+    class Sandbox(ImportCheckSandbox):
+        has_go = False
+
+        def run(self, cmd, workdir, timeout):
+            if cmd.startswith("go ") and not self.has_go:
+                return RunResult(127, "sh: 1: go: not found")
+            return super().run("pytest", workdir, timeout)
+
+    sandbox = Sandbox()
+    w = ScriptedWorker("w1", {"x": writes({"x.py": "X = 1\n"})})
+    repo = make_repo(tmp_path, {"lib.py": LIB, "app.py": "from lib import greet\n"})
+    store = TaskStore(tmp_path / "seam.sqlite")
+    g = GitRepo(repo)
+    reviewer = ScriptedReviewer()
+    orch = Orchestrator(store, Lead(store, "g", Budget(100)), g, [w],
+                        ReviewGate(g, sandbox, reviewer, scratch=tmp_path),
+                        MergeEngine(store, g, sandbox, suite_cmd="pytest", scratch=tmp_path),
+                        tmp_path / "worktrees")
+    t = add(store, "x", ["x.py"], test_cmd="go test ./...")
+
+    orch.run()
+    got = store.get(t.id)
+    assert (got.state, got.attempts) == (State.NEEDS_HUMAN, 0)
+    assert len(w.runs) == 1 and reviewer.seen == []  # no worker retries, no model paid
+    assert "could not run in the sandbox" in got.review_notes
+
+    sandbox.has_go = True  # the human builds an image with Go
+    escalation.rereview(store, t.id, "image fixed")
+    orch.run()
+    assert store.get(t.id).state is State.MERGED
+    assert len(w.runs) == 1  # the same branch, never reworked

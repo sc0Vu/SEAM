@@ -213,15 +213,19 @@ class Orchestrator:
             return
         self.lead.budget.charge(verdict.cost_usd)
         by_model = verdict.usage is not None or verdict.cost_usd > 0
+        outcome = "approve" if verdict.approve else ("env_fail" if verdict.environment
+                                                     else "reject")
         self._record(task_id, "reviewer" if by_model else "gate",
                      self._reviewer_id() if by_model else "gate",
-                     "approve" if verdict.approve else "reject", verdict.cost_usd, verdict.usage,
+                     outcome, verdict.cost_usd, verdict.usage,
                      verdict.notes,
                      json.dumps([{"name": p.name, "code": p.code} for p in verdict.probes])
                      if verdict.probes else "")
         if verdict.approve:
             self.store.transition(task_id, Event.APPROVE, review_notes=verdict.notes)
             self.store.transition(task_id, Event.ENQUEUE)
+        elif verdict.environment:  # the sandbox's fault: no worker can fix it
+            self.store.transition(task_id, Event.ESCALATE, review_notes=verdict.notes)
         else:
             self.store.transition(task_id, Event.REQUEST_CHANGES, review_notes=verdict.notes)
 

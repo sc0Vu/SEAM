@@ -122,6 +122,7 @@ branch is not checked out (`make_repo.sh` leaves `HEAD` detached).
 | `cli.py inspect --task N` | one task: branch, diff, every run with its cost, rejection notes |
 | `cli.py resolve --task N` | requeue an escalated task whose branch a review approved (it escalated at merge); the full suite still runs |
 | `cli.py rework --task N --notes "…"` | send an escalated task back to a worker with your guidance |
+| `cli.py rereview --task N` | after fixing the sandbox image, review a task whose tests could not run in it |
 | `cli.py cancel --task N` | cancel a task and everything that depends on it |
 | `cli.py amend --from-goal A --plan new.json` | change direction: cancel goal A's unstarted tasks, keep merged and in-flight work, load the new plan; A's spend counts toward the new goal's budget |
 
@@ -158,7 +159,7 @@ worker wrote what is in the trailers: `git log --grep 'SEAM-Worker: backend-2'`.
 ## Use it from Claude Code or Claude Desktop (MCP)
 
 `mcp_server.py` exposes SEAM as MCP tools: `status`, `inspect`, the rulings
-(`resolve`, `rework`, `cancel`), plans (`draft_plan`, `save_plan`, `show_plan`),
+(`resolve`, `rework`, `rereview`, `cancel`), plans (`draft_plan`, `save_plan`, `show_plan`),
 `amend`, `run`, and `job` (a background job's log). Register it with Claude Code:
 
 ```sh

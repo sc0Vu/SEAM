@@ -9,7 +9,7 @@ dir, the repos it may plan or run on (`--repo`, repeatable), and the most a sing
 or plan may spend (`--max-budget-usd`). A client, or a prompt injected into one,
 cannot point SEAM at other paths or start an uncapped run.
 
-Tools: status, inspect, the human rulings (resolve, rework, cancel), plans (draft,
+Tools: status, inspect, the human rulings (resolve, rework, rereview, cancel), plans (draft,
 save, show), amend (change a goal's direction), run, and job (a background job's
 log). `run` and `draft_plan` start `cli.py` as a background process and return at
 once; `run` takes the state dir's writer lock itself, so this server never writes
@@ -136,6 +136,10 @@ def resolve(cfg: Config, args: dict) -> str:
 
 def rework(cfg: Config, args: dict) -> str:
     return _cli(cfg, "rework", "--task", _task(args), "--notes", _notes(args))
+
+
+def rereview(cfg: Config, args: dict) -> str:
+    return _cli(cfg, "rereview", "--task", _task(args), "--notes", _notes(args))
 
 
 def cancel(cfg: Config, args: dict) -> str:
@@ -314,6 +318,10 @@ TOOLS = [
          {"properties": {**TASK, "notes": {"type": "string", "minLength": 1,
                                            "description": "guidance for the worker"}},
           "required": ["task", "notes"]}, rework),
+    Tool("rereview", "Review an escalated task's unchanged branch again, after the "
+         "sandbox environment its tests could not run in has been fixed. Only for "
+         "tasks escalated by such an environment failure.",
+         {"properties": {**TASK, **NOTES}, "required": ["task"]}, rereview),
     Tool("cancel", "Cancel a task and every task that depends on it.",
          {"properties": {**TASK, **NOTES}, "required": ["task"]}, cancel, destructive=True),
     Tool("draft_plan", "Start the LLM planner on a goal (background job; spends up to "

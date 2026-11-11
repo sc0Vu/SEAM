@@ -190,3 +190,29 @@ def test_probes_are_ignored_without_a_probe_cmd(tmp_path):
     gate, sandbox = probe_gate(tmp_path, RunResult(1, "would reject"),
                                Verdict(True, "ok", probes=(PROBE,)), probe_cmd=None)
     assert gate.review(task("t", ["feat/**"])).approve and sandbox.probe_files is None
+
+
+class MissingToolSandbox(ImportCheckSandbox):
+    """The image lacks the task's test tool, as with `go test` in a Python image."""
+
+    def run(self, cmd, workdir, timeout):
+        self.calls.append((cmd, workdir, []))
+        return RunResult(127, "sh: 1: go: not found")
+
+
+def test_tests_that_cannot_run_are_an_environment_failure_not_a_rejection(tmp_path):
+    repo = make_repo(tmp_path, {"lib.py": "def greet():\n    pass\n"})
+    branch_with(repo, "seam/t", {"feat.go": "package x\n"})
+    reviewer = RecordingReviewer()
+    gate = ReviewGate(GitRepo(repo), MissingToolSandbox(), reviewer)
+    v = gate.review(task("seam/t", ["feat.go"], test_cmd="go test ./..."))
+    assert (v.approve, v.environment) == (False, True)
+    assert "could not run in the sandbox" in v.notes and "go: not found" in v.notes
+    assert reviewer.requests == []  # nothing was judged, so no model was paid
+
+
+def test_ordinary_test_failures_stay_ordinary_rejections(setup):
+    repo, reviewer, sandbox, gate = setup
+    branch_with(repo, "seam/t", {"x.py": "from lib import nope\n"})
+    v = gate.review(task("seam/t", ["x.py"]))
+    assert (v.approve, v.environment) == (False, False)

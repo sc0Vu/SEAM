@@ -1,5 +1,5 @@
 """SEAM entrypoint: plan | add-goal | amend | run | status | inspect | resolve | rework |
-cancel.
+rereview | cancel.
 
 The only place that prints or exits; everything below raises typed exceptions.
 """
@@ -191,10 +191,12 @@ def _run(args: argparse.Namespace) -> None:
         _add_goal(args)
     store = _store(args.state_dir)
     scratch = args.state_dir / "tmp"
+    merger = MergeEngine(store, repo, tests, suite_cmd=args.suite_cmd,
+                         target=args.target, scratch=scratch)
     with CredentialProxyContainer(credential, args.image,
                                   token_cap=args.token_cap) as proxy:
         check_proxy(proxy, args.image, scratch)
-        _run_team(args, store, repo, tests, scratch, proxy)
+        _run_team(args, store, repo, tests, scratch, proxy, merger)
     _report_proxy(proxy)
 
 
@@ -207,7 +209,7 @@ def _report_proxy(proxy: CredentialProxyContainer) -> None:
         print(f"warning: {line}")
 
 
-def _run_team(args, store, repo, tests, scratch, proxy) -> None:
+def _run_team(args, store, repo, tests, scratch, proxy, merger) -> None:
     # Workers see only the proxy URL and a placeholder credential (doc §10).
     worker_box = DockerSandbox(args.image, network=proxy.network,
                                env_values=proxy.worker_env(), readonly=(".git",),
@@ -231,8 +233,7 @@ def _run_team(args, store, repo, tests, scratch, proxy) -> None:
         gate=ReviewGate(repo, tests, reviewer, target=args.target, scratch=scratch,
                         focused_context=args.review_context == "focused",
                         probe_cmd=DEFAULT_PROBE_CMD if args.review_probes else None),
-        merger=MergeEngine(store, repo, tests, suite_cmd=args.suite_cmd,
-                           target=args.target, scratch=scratch),
+        merger=merger,
         worktree_root=args.state_dir / "worktrees",
         target=args.target,
     )
@@ -285,6 +286,8 @@ def _rulings(store: TaskStore, task_id: int) -> str:
     options = [f"rework --task {task_id} --notes '...'", f"cancel --task {task_id}"]
     if escalation.approved_as_is(store, task_id):
         options.insert(0, f"resolve --task {task_id}")
+    if escalation.env_failed(store, task_id):
+        options.insert(0, f"rereview --task {task_id} (after fixing the sandbox image)")
     return " | ".join(options)
 
 
@@ -299,6 +302,12 @@ def cmd_rework(args: argparse.Namespace) -> None:
         t = escalation.rework(_store(args.state_dir), args.task, args.notes)
     print(f"task {t.id} -> {t.state}: the next `run` sends it back to {t.owner} "
           "with your notes")
+
+
+def cmd_rereview(args: argparse.Namespace) -> None:
+    with writer_lock(args.state_dir, "rereview"):
+        t = escalation.rereview(_store(args.state_dir), args.task, args.notes)
+    print(f"task {t.id} -> {t.state}: the next `run` reviews its branch again")
 
 
 def cmd_cancel(args: argparse.Namespace) -> None:
@@ -399,6 +408,8 @@ def parser() -> argparse.ArgumentParser:
          "needs no edits (the full suite still runs at merge)", "why (recorded)"),
         ("rework", cmd_rework, "send an escalated task back to its worker with notes",
          "guidance for the worker (required)"),
+        ("rereview", cmd_rereview, "review an escalated task's branch again, after "
+         "fixing the sandbox environment its tests could not run in", "why (recorded)"),
         ("cancel", cmd_cancel, "cancel a task and every task that depends on it",
          "why (recorded)"),
     ):

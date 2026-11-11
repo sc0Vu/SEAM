@@ -49,6 +49,8 @@ class Event(StrEnum):
     UNBLOCK = "unblock"
     RECOVER = "recover"
     CANCEL = "cancel"
+    ESCALATE = "escalate"
+    REREVIEW = "rereview"
 
 
 TERMINAL: frozenset[State] = frozenset({State.MERGED, State.CANCELLED})
@@ -79,6 +81,8 @@ _TRANSITIONS: dict[tuple[State, Event], State] = {
     (State.NEEDS_HUMAN, Event.RESOLVE): State.QUEUED_FOR_MERGE,
     (State.NEEDS_HUMAN, Event.REWORK): State.IN_PROGRESS,
     (State.MERGING, Event.RECOVER): State.QUEUED_FOR_MERGE,
+    (State.IN_REVIEW, Event.ESCALATE): State.NEEDS_HUMAN,
+    (State.NEEDS_HUMAN, Event.REREVIEW): State.SUBMITTED,
 }
 
 
@@ -102,6 +106,11 @@ def next_state(
     - `merge_conflict` also counts an attempt, for the record (it always escalates).
     - `rework` (a human sends an escalated task back to its branch) resets attempts:
       the human's judgment starts a fresh retry budget.
+    - `escalate` (the task's tests could not run in the sandbox: an environment
+      fault) goes straight to `needs_human` without counting an attempt: no worker
+      can fix the sandbox, so retrying would only burn runs. `rereview` (a human
+      fixed the environment) sends the unchanged branch back to `submitted`, to be
+      reviewed again; it counts nothing either.
     - `cancel` is legal from any non-terminal state except `merging`: a merge in flight
       must finish or be recovered, never abandoned half-applied (invariant 12).
     """

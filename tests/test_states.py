@@ -108,3 +108,23 @@ def test_repeated_scope_requests_escalate_at_the_bound():
     state, attempts = walk([Event.CLAIM, Event.START, *ask, *ask])
     assert (state, attempts) == (State.IN_PROGRESS, 2)
     assert walk([Event.REQUEST_SCOPE], state, attempts) == (State.NEEDS_HUMAN, 3)
+
+
+def test_environment_failure_escalates_without_spending_an_attempt():
+    """The sandbox can't run the task's tests: no worker can fix that, so the task
+    goes straight to a human, and its retry budget is untouched."""
+    to_review = [Event.CLAIM, Event.START, Event.SUBMIT, Event.PICKUP]
+    assert walk(to_review + [Event.ESCALATE]) == (State.NEEDS_HUMAN, 0)
+    # After the human fixes the sandbox: the same branch goes back to review.
+    assert walk(to_review + [Event.ESCALATE, Event.REREVIEW]) == (State.SUBMITTED, 0)
+    assert walk(to_review + [Event.ESCALATE, Event.REREVIEW, Event.PICKUP, Event.APPROVE,
+                             Event.ENQUEUE, Event.TAKE, Event.MERGE_CLEAN])[0] is State.MERGED
+
+
+@pytest.mark.parametrize("state", [State.OPEN, State.IN_PROGRESS, State.SUBMITTED,
+                                   State.QUEUED_FOR_MERGE, State.MERGING])
+def test_escalate_only_from_review_and_rereview_only_from_needs_human(state):
+    with pytest.raises(IllegalTransition):
+        next_state(state, Event.ESCALATE, 0)
+    with pytest.raises(IllegalTransition):
+        next_state(state, Event.REREVIEW, 0)

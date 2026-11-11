@@ -247,3 +247,10 @@ def test_real_proxy_reachable_only_from_the_internal_network(monkeypatch, workdi
 def test_a_missing_image_fails_instead_of_being_pulled(workdir):
     res = DockerSandbox("seam-no-such-image:never").run("true", workdir, timeout=60)
     assert not res.ok and "Pulling" not in res.output
+
+
+@pytest.mark.parametrize("code, env", [(127, True), (126, True), (125, True), (1, False),
+                                       (2, False), (0, False), (-1, False)])
+def test_env_failure_means_the_command_never_ran(code, env):
+    assert RunResult(code, "").env_failure is env
+    assert not RunResult(127, "", timed_out=True).env_failure  # a timeout ran the code

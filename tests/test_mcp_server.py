@@ -67,7 +67,8 @@ def test_notifications_get_no_reply_and_unknown_methods_an_error(cfg):
 def test_tools_are_listed_with_schemas_and_hints(cfg):
     tools = M.handle(cfg, {"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]
     by = {t["name"]: t for t in tools}
-    assert set(by) == {"status", "inspect", "resolve", "rework", "cancel", "amend", "draft_plan",
+    assert set(by) == {"status", "inspect", "resolve", "rework", "rereview", "cancel", "amend",
+                       "draft_plan",
                        "save_plan", "show_plan", "run", "job"}
     assert by["status"]["annotations"]["readOnlyHint"] is True
     assert by["cancel"]["annotations"]["destructiveHint"] is True
