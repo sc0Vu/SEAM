@@ -149,6 +149,35 @@ def test_amend_from_the_cli_and_status_shows_the_link(tmp_path, capsys):
     assert cli.main(args) == 1  # v2 is loaded now: a clean error, nothing changes
 
 
+def test_run_refuses_a_red_target_before_loading_or_spending(tmp_path, monkeypatch, capsys):
+    """The baseline suite runs first: a target that can't pass (here: the image lacks
+    the tool) stops the run before the plan is loaded or the proxy starts."""
+    from sandbox.base import RunResult
+
+    class NoToolSandbox:
+        def __init__(self, *a, **kw):
+            pass
+
+        def run(self, cmd, workdir, timeout):
+            return RunResult(127, "sh: 1: go: not found")
+
+    def no_proxy(*a, **kw):
+        raise AssertionError("the proxy must not start for a red target")
+
+    monkeypatch.setattr(cli, "preflight", lambda args, repo, box: "ANTHROPIC_API_KEY")
+    monkeypatch.setattr(cli, "DockerSandbox", NoToolSandbox)
+    monkeypatch.setattr(cli, "CredentialProxyContainer", no_proxy)
+    repo = make_repo(tmp_path, {"a.py": ""})
+    state = tmp_path / "s"
+    code = cli.main(["run", "--repo", str(repo), "--state-dir", str(state),
+                     "--plan", str(EXAMPLES / "case1.json"), "--suite-cmd", "go test ./..."])
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "BaselineFailed" in err and "could not run in the sandbox" in err
+    assert cli.main(["status", "--state-dir", str(state)]) == 0
+    assert "no tasks" in capsys.readouterr().out  # the plan was never loaded
+
+
 def test_rereview_from_the_cli_only_after_an_environment_failure(tmp_path, capsys):
     state = str(tmp_path / "s")
     _escalated_store(state)  # escalated by review rejections, not the environment

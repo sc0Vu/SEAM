@@ -9,9 +9,10 @@ import pytest
 
 from engine.errors import TargetCheckedOut
 from engine.git import GitRepo
-from engine.merge import MergeEngine
+from engine.merge import BaselineFailed, MergeEngine
 from engine.states import Event, State
 from engine.task import TaskSpec
+from sandbox.base import RunResult
 from store import TaskStore
 from tests.fakes import ImportCheckSandbox
 from tests.gitfixture import branch_with, commit_files, git, make_repo
@@ -80,7 +81,8 @@ def test_semantic_conflict_escalates_and_main_stays_green(env):
     escalated = engine.merge_next()
     assert escalated.id == caller.id
     assert escalated.state is State.NEEDS_HUMAN
-    assert "semantic conflict" in escalated.review_notes
+    assert "semantic conflict between the task and main" in escalated.review_notes
+    assert "main alone passes" in escalated.review_notes
     assert "cannot import name 'greet'" in escalated.review_notes
     assert git(repo, "rev-parse", "main") == main_after_rename  # break never merged
     assert store.get(rename.id).state is State.MERGED
@@ -191,3 +193,37 @@ def test_refuses_when_target_checked_out(env):
     with pytest.raises(TargetCheckedOut):
         engine.merge_next()
     assert store.get(t.id).state is State.QUEUED_FOR_MERGE
+
+
+def test_baseline_is_checked_on_the_committed_target(env):
+    repo, store, sandbox, engine = env
+    engine.require_green_baseline()  # green: no error
+    assert sandbox.calls[-1][0] == "pytest"
+    git(repo, "update-ref", "refs/heads/main",  # main is now red
+        branch_with(repo, "broken", {"app.py": "from lib import nope\n"}))
+    with pytest.raises(BaselineFailed, match="main is not green before any agent ran") as e:
+        engine.require_green_baseline()
+    assert "cannot import name 'nope'" in str(e.value)
+    assert "untracked or gitignored" in str(e.value)  # the funda-cli lesson
+
+
+def test_baseline_names_a_missing_tool_as_an_image_problem(env):
+    repo, store, _, engine = env
+    engine.sandbox = type("NoTool", (), {
+        "run": lambda self, cmd, wd, t: RunResult(127, "sh: 1: go: not found")})()
+    with pytest.raises(BaselineFailed, match="could not run in the sandbox .*--image"):
+        engine.require_green_baseline()
+
+
+def test_a_red_target_is_not_blamed_on_the_task(env):
+    """main breaks outside SEAM after a task was approved: the escalation must say the
+    target is broken (and that `resolve` applies once it is fixed), not guess a
+    semantic conflict."""
+    repo, store, _, engine = env
+    t = approved_task(store, repo, "seam/t", ["t.py"], {"t.py": ""})
+    git(repo, "update-ref", "refs/heads/main",
+        branch_with(repo, "broken", {"app.py": "from lib import nope\n"}))
+    escalated = engine.merge_next()
+    assert escalated.id == t.id and escalated.state is State.NEEDS_HUMAN
+    assert "main ITSELF fails the suite" in escalated.review_notes
+    assert "not a conflict with the task" in escalated.review_notes

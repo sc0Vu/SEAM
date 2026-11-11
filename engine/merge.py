@@ -12,14 +12,35 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from engine.errors import TargetCheckedOut
+from engine.errors import SeamError, TargetCheckedOut
 from engine.git import GitRepo
 from engine.states import Event, State
 from engine.task import Task
-from sandbox.base import Sandbox
+from sandbox.base import RunResult, Sandbox
 from store.sqlite import TaskStore
 
 _OUTPUT_TAIL = 4000
+
+
+class BaselineFailed(SeamError):
+    """The full suite fails on the target before any task merged. Nothing can merge
+    while that is true (every merge needs a green suite), so a run refuses to start
+    rather than spend on work that cannot land."""
+
+    def __init__(self, target: str, result: RunResult) -> None:
+        if result.env_failure:
+            why = (f"the suite command could not run in the sandbox (exit "
+                   f"{result.exit_code}): the image lacks a tool; use an --image that "
+                   "has the project's toolchain")
+        elif result.timed_out:
+            why = "the full suite timed out"
+        else:
+            why = (f"the full suite fails (exit {result.exit_code}); fix {target} first. "
+                   "Note SEAM tests commits only: files that exist in your folder but "
+                   "are untracked or gitignored are not there")
+        super().__init__(f"{target} is not green before any agent ran ({why}).\n"
+                         f"--- suite output (tail) ---\n{result.output[-_OUTPUT_TAIL:]}")
+        self.result = result
 
 
 @dataclass(frozen=True)
@@ -63,6 +84,21 @@ class MergeEngine:
         self.target = target
         self.suite_timeout = suite_timeout
         self.scratch = scratch
+
+    def run_suite(self, rev: str) -> RunResult:
+        """The full suite on `rev`'s committed tree, exported, in the sandbox."""
+        if self.scratch is not None:
+            Path(self.scratch).mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="seam-suite-", dir=self.scratch) as d:
+            self.repo.export(self.repo.rev_parse(rev), Path(d))
+            return self.sandbox.run(self.suite_cmd, Path(d), self.suite_timeout)
+
+    def require_green_baseline(self) -> None:
+        """Raise `BaselineFailed` unless the full suite passes on the target as it is.
+        Run it before any agent: a red target means nothing could ever merge."""
+        result = self.run_suite(self.target)
+        if not result.ok:
+            raise BaselineFailed(self.target, result)
 
     def recover(self) -> list[Task]:
         """Settle tasks left in `merging` by a crash: `merged` if their merge commit
@@ -124,9 +160,16 @@ class MergeEngine:
             result = self.sandbox.run(self.suite_cmd, Path(d), self.suite_timeout)
         if not result.ok:
             why = "timed out" if result.timed_out else f"failed (exit {result.exit_code})"
+            # Is the target itself broken? Then this is not a conflict with the task.
+            if not self.run_suite(base).ok:
+                cause = (f"{self.target} ITSELF fails the suite at {base[:10]}, so this is "
+                         "not a conflict with the task. Fix the target, then `resolve` "
+                         "the task (its approved branch needs no change)")
+            else:
+                cause = (f"{self.target} alone passes, so this is a semantic conflict "
+                         f"between the task and {self.target}")
             return _Escalate(
-                f"full suite {why} on the merged tree with no textual conflict: "
-                f"likely a semantic conflict with {self.target}.\n"
+                f"full suite {why} on the merged tree with no textual conflict: {cause}.\n"
                 f"--- suite output (tail) ---\n{result.output[-_OUTPUT_TAIL:]}"
             )
         return _Ready(base=base, merge_sha=merge_sha)

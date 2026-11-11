@@ -345,6 +345,21 @@ published and the task is requeued to merge against the new main. Any unexpected
 before publishing also requeues (main untouched) and re-raises. All engine git calls
 run with hooks disabled, so no repository-supplied code executes on the host.
 
+**Baseline check** (`MergeEngine.require_green_baseline`). `run` first runs the full
+suite on the target's committed tree, before the plan is loaded, the proxy starts, or
+any agent runs. Every merge needs a green suite, so a red target means nothing can
+land; the run refuses (`BaselineFailed`) at no model cost. The message tells a missing
+tool (exit 125–127: use an `--image` with the toolchain) apart from failing tests, and
+reminds that SEAM tests commits only: files present in a folder but untracked or
+gitignored are absent. Both failures were seen on a real Go project (a Python-only
+image, then `cmd/` files hidden by a `.gitignore` rule) and cost $0.49 of agent runs
+before this check existed.
+
+**Broken target vs semantic conflict.** When the merged tree fails, the engine also runs
+the suite on the target alone. If that fails too, the escalation says the target itself
+is broken (not a conflict with the task; fix it, then `resolve`); otherwise it reports
+a semantic conflict between the task and the target.
+
 **The target branch must not be checked out** in any working tree: moving a checked-out
 branch's ref leaves that tree's files stale. The engine refuses (`TargetCheckedOut`);
 run SEAM against a dedicated clone of the real repo.

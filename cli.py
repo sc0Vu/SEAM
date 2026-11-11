@@ -187,12 +187,15 @@ def _run(args: argparse.Namespace) -> None:
     repo = GitRepo(args.repo)
     tests = DockerSandbox(args.image, user=host_user())
     credential = preflight(args, repo, tests)
-    if args.plan:
-        _add_goal(args)
     store = _store(args.state_dir)
     scratch = args.state_dir / "tmp"
     merger = MergeEngine(store, repo, tests, suite_cmd=args.suite_cmd,
                          target=args.target, scratch=scratch)
+    # Before anything is loaded or spent: nothing can merge into a red target.
+    print(f"checking the full suite on {args.target} before any agent runs...")
+    merger.require_green_baseline()
+    if args.plan:
+        _add_goal(args)
     with CredentialProxyContainer(credential, args.image,
                                   token_cap=args.token_cap) as proxy:
         check_proxy(proxy, args.image, scratch)

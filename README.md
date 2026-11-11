@@ -129,6 +129,11 @@ branch is not checked out (`make_repo.sh` leaves `HEAD` detached).
 Commands that change task state refuse to run while another one (usually a `run`)
 holds the state dir, so a human ruling never races a running team.
 
+Before any agent starts, `run` runs `--suite-cmd` on the target's committed tree in the
+sandbox and refuses if it fails, at no model cost. Nothing can merge into a red target.
+Typical causes: the image lacks the project's toolchain (build one with it and pass
+`--image`), or files the build needs are untracked or gitignored (SEAM tests commits).
+
 All take `--state-dir` (default `./.seam`). Useful `run` options:
 
 | option | default | meaning |
