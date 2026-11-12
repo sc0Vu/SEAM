@@ -109,7 +109,8 @@ class Orchestrator:
         for w in self.workers:
             if w.id in busy_workers or not self.lead.can_dispatch():
                 continue
-            task = self._rework_for(w, busy_tasks) or self._claim_for(w)
+            task = (self._rework_for(w, busy_tasks) or self._stale_claim_for(w, busy_tasks)
+                    or self._claim_for(w))
             if task is None:
                 continue
             busy_tasks.add(task.id)
@@ -132,13 +133,27 @@ class Orchestrator:
                 orphan = t
         return self.store.reassign(orphan.id, w.id) if orphan else None
 
+    def _stale_claim_for(self, w: Worker, busy: set[int]) -> Task | None:
+        """A task of this worker's type left `claimed`: this loop claims and starts a
+        task in one step, so one found here was claimed by a run that stopped before
+        starting it (a crash, or a worktree that could not be created). It keeps its
+        claim, and its scope, and is started now."""
+        for t in self.store.list(State.CLAIMED):
+            if t.id not in busy and t.spec.type == w.type:
+                return self._start(self.store.reassign(t.id, w.id) if t.owner != w.id else t)
+        return None
+
     def _claim_for(self, w: Worker) -> Task | None:
         task = self.store.claim(w.id, w.type)
-        if task is None:
-            return None
+        return self._start(task) if task else None
+
+    def _start(self, task: Task) -> Task:
+        """Give a claimed task its worktree and branch, and move it to in_progress."""
         branch = f"seam/{self.store.branch_namespace}/task-{task.id}"
         path = self.worktree_root / f"task-{task.id}"
-        if not path.exists():
+        if path.exists():  # left by an earlier run: record the branch it is really on
+            branch = GitRepo(path).current_branch() or branch
+        else:
             self.worktree_root.mkdir(parents=True, exist_ok=True)
             self.repo.add_worktree(path, branch, self.target)
         return self.store.transition(

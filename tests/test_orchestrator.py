@@ -487,3 +487,24 @@ def test_merged_branches_are_deleted_and_escalated_ones_kept(tmp_path):
     assert merged.branch.startswith(f"seam/{store.branch_namespace}/task-")
     assert not GitRepo(repo).has_branch(merged.branch)
     assert GitRepo(repo).has_branch(escalated.branch)  # a human may need to inspect it
+
+
+def test_a_task_left_claimed_is_started_on_the_next_run(tmp_path):
+    """A run that stopped between claiming and starting a task (a crash, or the old
+    branch collision) left it `claimed`, which nothing used to pick up again."""
+    w = ScriptedWorker("w1", {"count": writes({"count.py": "N = 1\n"})})
+    _, store, _, orch = build(tmp_path, [w])
+    t = add(store, "count", ["count.py"])
+    store.claim("gone-worker", "backend")
+    assert store.get(t.id).state is State.CLAIMED
+    assert orch.run().ids_in(State.MERGED) == [t.id]
+
+
+def test_a_claimed_task_keeps_the_branch_its_leftover_worktree_is_on(tmp_path):
+    w = ScriptedWorker("w1", {"count": writes({"count.py": "N = 1\n"})})
+    repo, store, _, orch = build(tmp_path, [w])
+    t = add(store, "count", ["count.py"])
+    store.claim("w1", "backend")
+    GitRepo(repo).add_worktree(tmp_path / "worktrees" / f"task-{t.id}", "seam/task-1", "main")
+    assert orch.run().ids_in(State.MERGED) == [t.id]
+    assert store.get(t.id).branch == "seam/task-1"

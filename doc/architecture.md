@@ -117,9 +117,10 @@ condition that keeps sqlite valid). Each pass: drain the merge queue (serially),
 retry denied scope requests that merges may have freed, dispatch idle workers (rework
 on their own in_progress tasks first, then adopt an in_progress task of their type
 whose owner is not in this run — after a restart with fewer workers, or a human's
-`rework` — via `TaskStore.reassign`, then a fresh claim → new worktree + branch
-`seam/<namespace>/task-<id>` off the target), start one review if the reviewer is
-free; then wait
+`rework` — via `TaskStore.reassign`, then a task left `claimed` by a run that stopped before
+starting it, then a fresh claim → new worktree + branch `seam/<namespace>/task-<id>`
+off the target; a leftover worktree is reused and its actual branch recorded), start
+one review if the reviewer is free; then wait
 for any run to finish. A worker's changes are committed on its branch by the
 orchestrator, and the diff stored at submit is git's (`target...branch`), not the
 worker's. It stops when nothing is running and nothing can start (done, escalated,

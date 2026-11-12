@@ -194,3 +194,10 @@ def test_only_a_fully_merged_branch_is_deleted(repo):
     git(repo, "update-ref", "refs/heads/main", g.rev_parse("t1"))
     assert g.delete_merged_branch("t1", "main") and not g.has_branch("t1")
     assert not g.delete_merged_branch("t1", "main")  # already gone
+
+
+def test_current_branch(repo, tmp_path):
+    g = GitRepo(repo)
+    assert g.current_branch() is None  # the fixture leaves HEAD detached
+    g.add_worktree(tmp_path / "wt", "seam/ns/task-3", "main")
+    assert GitRepo(tmp_path / "wt").current_branch() == "seam/ns/task-3"

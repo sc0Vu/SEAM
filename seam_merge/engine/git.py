@@ -189,6 +189,11 @@ class GitRepo:
         self._git("commit", "-q", "--no-verify", "-m", message, env=self._identity_env())
         return self.rev_parse("HEAD")
 
+    def current_branch(self) -> str | None:
+        """The branch this (work)tree has checked out, or None if HEAD is detached."""
+        proc = self._run("symbolic-ref", "-q", "--short", "HEAD")
+        return proc.stdout.decode().strip() or None if proc.returncode == 0 else None
+
     def has_branch(self, branch: str) -> bool:
         return self._run("rev-parse", "--verify", "-q", f"refs/heads/{branch}").returncode == 0
 
