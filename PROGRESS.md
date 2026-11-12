@@ -133,9 +133,9 @@ Last updated: 2026-11-12. State: released **seam-merge 0.1.0** on PyPI (tag v0.1
 0. From the replay: (a) DONE 2026-11-12: existing-test guard + `may_change_tests`
    (r3 rerun merged clean, no regression); (b) DONE 2026-11-12: claim probes, run by
    `seam plan` on the untouched code (17 probes on 7 replay goals: 1 true catch,
-   r1's trap; 2 bad probes; 6 of 13 tasks unprobed); (c) a worker -> lead
-   channel to propose a separate task instead of looping to escalation (r1 escalated
-   falsely in both full replay runs; claim probes caught its trap only when written).
+   r1's trap; 2 bad probes; 6 of 13 tasks unprobed); (c) DONE 2026-11-12:
+   proposals (`.seam-proposals`): the exact plan that escalated r1 now merges first
+   try with the side bug recorded as a proposal (1 controlled trial).
 1. Probe adjudication — deferred by owner (2026-11-11).
 2. Planner measurements on goals NOT written by the author (the real test), with a
    silent-defect check; and a goal whose tasks genuinely conflict.
@@ -144,7 +144,7 @@ Last updated: 2026-11-12. State: released **seam-merge 0.1.0** on PyPI (tag v0.1
    args, state dir, repo files or git objects.
 
 ## Spend
-2026-11-12: $0.12 (greeter case 2 over MCP) + $2.91 (replay benchmark, 7 goals) + $0.21 (r3 rerun) + $0.72 (two claim-probe re-plans) + $2.73 (full replay rerun).
+2026-11-12: $0.12 (greeter case 2 over MCP) + $2.91 (replay benchmark, 7 goals) + $0.21 (r3 rerun) + $0.72 (two claim-probe re-plans) + $2.73 (full replay rerun) + $0.37 (r1 proposal trials).
 2026-11-11: $1.44 (bench4 planning $0.08 + run $1.36).
 Before: ≈ $6 API-equivalent so far (subscription usage): $2.72 in run records (bench1 $0.67,
 bench2 $1.35, bench3 $0.47, token-measurement runs $0.24), plus ≈ $0.80 of greeter runs

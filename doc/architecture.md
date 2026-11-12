@@ -966,6 +966,16 @@ not flag it (in the claim-probe measurement above it did). Two runs, two false
 escalations on r1: whether the planner probes a claim varies run to run, and the
 worker still has no way to set the side bug aside as a separate task.
 
+*Proposals, measured on r1* (§2; `results/2026-11-12/proposals/`). Two fresh r1 runs
+(new plans) merged first try, 1/1 hidden, but neither plan set the trap (no
+in-handler rendering requirement), so they say nothing about the channel. The
+controlled trial reran the exact plan that escalated in the rerun, on a fresh clone,
+with the channel: the worker fixed only `full_trace`, set the `_DeferredLine.__str__`
+bug aside as a proposal, marked the dependent test `xfail(strict=True)`, and the
+reviewer accepted the deferral. Merged on the first attempt, 1/1 hidden target test,
+no regression, $0.12 (the escalated run: 3 attempts, $0.25 and a human). One trial
+of one trap: it shows the mechanism works as designed, not how often.
+
 ---
 
 ## 13. MCP server (built)

@@ -1,0 +1,11 @@
+{
+  "goal": "r1-excutils",
+  "fix": "2ecf547",
+  "files": [
+    "tests/test_excutils.py"
+  ],
+  "target": 1,
+  "target_passed": 1,
+  "target_failed": [],
+  "regressions": []
+}
