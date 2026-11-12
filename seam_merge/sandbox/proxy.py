@@ -9,8 +9,9 @@ prompt-injected worker can neither read the credential nor reach any other host
 reports and refuses new requests once the cap is spent, so a compromised worker
 cannot burn quota without limit.
 
-Stdlib only and free of SEAM imports: the CLI mounts this one file read-only into a
-container and runs it as `python3 proxy.py`.
+Stdlib only and free of SEAM imports: the CLI runs this one file's source in a
+container as `python3 -c <source>` (no host mount, so it works wherever SEAM is
+installed).
 """
 
 from __future__ import annotations

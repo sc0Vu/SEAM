@@ -27,7 +27,10 @@ DEFAULT_IMAGE = "seam-sandbox"  # built by `seam image build` from DOCKERFILE
 DOCKERFILE = Path(__file__).with_name("Dockerfile")  # package data
 WORKER_NETWORK = "seam-workers"  # --internal: no route out except via the proxy
 PROXY_PORT = 8080
-PROXY_SCRIPT = Path(__file__).with_name("proxy.py")  # mounted read-only into the proxy
+# Its source is passed to `python3 -c`, not mounted: a bind mount only works from a
+# host path the Docker VM shares (colima shares just $HOME), and the installed
+# package may live anywhere. The source holds no secret.
+PROXY_SCRIPT = Path(__file__).with_name("proxy.py")
 CONTAINER_HOME = "/tmp"  # writable for any uid; HOME when running as the host user
 
 
@@ -228,8 +231,7 @@ class CredentialProxyContainer:
             "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
             "--memory", "256m", "--pids-limit", "64",
             "-e", self.kind.env_name,  # by name: the value never enters argv
-            "-v", f"{self.script}:/opt/seam/proxy.py:ro",
-            self.image, "python3", "/opt/seam/proxy.py",
+            self.image, "python3", "-c", self.script.read_text(),
             "--credential-env", self.kind.env_name, "--port", str(PROXY_PORT),
         ]
         for subnet in subnets:

@@ -9,6 +9,7 @@ import pytest
 from seam_merge.sandbox.base import RunResult, Sandbox
 from seam_merge.sandbox.docker import (
     DEFAULT_IMAGE,
+    PROXY_SCRIPT,
     WORKER_NETWORK,
     CredentialProxyContainer,
     DockerSandbox,
@@ -168,7 +169,8 @@ def test_proxy_creates_internal_network_and_holds_credential_by_name():
     assert run[run.index("-e") + 1] == "CLAUDE_CODE_OAUTH_TOKEN"  # a name, never a value
     assert run[run.index("--network") + 1] == WORKER_NETWORK
     assert run[run.index("--allow") + 1] == "172.30.0.0/16"
-    assert any(a.endswith("proxy.py:/opt/seam/proxy.py:ro") for a in run)
+    # The proxy's source runs inline; no host path is mounted (colima shares only $HOME).
+    assert run[run.index("-c") + 1] == PROXY_SCRIPT.read_text() and "-v" not in run
     connect = fake.calls[verbs.index(["network", "connect"])]
     assert connect[1:] == ["network", "connect", "bridge", proxy.name]
     assert fake.calls[-1][1:] == ["rm", "-f", proxy.name]  # removed on exit

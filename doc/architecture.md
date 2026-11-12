@@ -605,7 +605,9 @@ worker container ──(internal net, no egress)──▶ seam-proxy ──(brid
   `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`.
 
 **Built** in `seam_merge/sandbox/proxy.py` (the proxy) and `CredentialProxyContainer` in
-`seam_merge/sandbox/docker.py` (network + container lifecycle); `seam run` starts it, then
+`seam_merge/sandbox/docker.py` (network + container lifecycle; the proxy's source is
+passed as `python3 -c`, never bind-mounted, so it runs from any install location);
+`seam run` starts it, then
 checks from the worker network that the proxy answers and that `1.1.1.1:443` is
 unreachable, before any agent runs. Exactly one credential env var may be set. The
 proxy serves only clients from the internal network's subnet, and its log (request
