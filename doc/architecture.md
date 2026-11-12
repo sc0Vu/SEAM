@@ -157,7 +157,9 @@ it, and a test the task asks for that depends on it is marked `xfail(strict=True
 The proposals are stored with the task (latest submission), shown to the reviewer as
 untrusted data, which accepts a deferral only if the work is genuinely outside the
 task, and listed by `status` and `inspect`. A proposal never becomes a task by
-itself: the lead, or a human through a new goal, decides.
+itself: the lead, or a human through a new goal, decides. `seam proposals` gathers
+them into a draft goal, headed as unverified agent text, for a human to edit before
+`seam plan`; it never plans from them itself, since a goal instructs the lead.
 
 *The existing-test guard* (`seam_merge/reviewer/existing_tests.py`). Constraint
 served: invariant 5's second gate is only as strong as the suite, and a worker can

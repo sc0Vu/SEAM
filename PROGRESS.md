@@ -156,9 +156,8 @@ Last updated: 2026-11-13. State: released **seam-merge 0.2.2** on PyPI (tag v0.2
   through the public API meanwhile, which is enough for releases.
 
 ## Next
-1. **Proposals -> draft goal.** A command that gathers recorded proposals into a goal
-   text for `seam plan` (the step a human does by hand). Small; worth it once
-   proposals recur (1 so far).
+1. DONE 2026-11-13: `seam proposals [--out]` drafts a goal from recorded proposals,
+   labelled as unverified agent text, for a human to edit before `seam plan`.
 2. **Second-codebase benchmark** (when the owner wants it): generalize
    `examples/boltons-replay/replay.py` beyond boltons, pick 6-8 recent merged fixes
    from another Python project, same controls, ~$3-5. Measures the lead on goals it
