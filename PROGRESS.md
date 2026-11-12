@@ -133,30 +133,43 @@ Last updated: 2026-11-13. State: released **seam-merge 0.2.2** on PyPI (tag v0.2
   of bench-3's two "real bugs" too (root cause predates SEAM).
 
 ## Open issues
-- Reviewer reliability (above).
-- A compromised agent can still spend quota through the proxy up to `--token-cap`.
-- Planner gap seen once: task `test_cmd` omitted doctests the merge suite runs.
+- Reviewer reliability: a single LLM review let a test-passing bug through about half
+  the time in bench-1..3. Since then the replay found no silent defect beyond r3's,
+  which the existing-test guard now blocks; still a handful of runs.
+- A compromised agent can still spend quota through the proxy up to `--token-cap`
+  (enforced and documented; nothing further planned).
+- Claim probes cover about half the tasks; unprobed statements are only flagged
+  (UNCHECKED), by a wording heuristic with a known false alarm (a parameter named
+  `keep`).
+- The lead is measured on one codebase (boltons). Every guard added on 2026-11-12 was
+  shaped on the same 7 replay goals.
 
 ## Pending decisions (owner)
-- Probe adjudication: on a probe failure, one extra reviewer call with the original
-  code decides whether the change caused it. Fixes false rejections but ends
-  "a failing probe always rejects".
-- GitHub Pages: Settings → Pages → Source: "GitHub Actions" (needed for the site).
-- `gh` CLI login has expired (`gh auth login`), so CI logs can't be read from here.
+- Probe adjudication (one extra reviewer call to judge a failing probe): deferred
+  2026-11-11.
+- Second-codebase replay benchmark: skipped 2026-11-12. It is what would justify
+  plan-and-run in one step (unattended planning), which stays off until then.
+- Docker images on this machine (disk ~2.5 GB free): `seam-sandbox-go` (2.41 GB),
+  `golang:1.25-bookworm`, `docker:cli`, `python:3.11-slim`, `prijsvink-api`; keep
+  `seam-sandbox` and `python:3.13-slim` (tests use them).
+- `gh auth login`: the CLI token is still invalid (2026-11-13). CI status is read
+  through the public API meanwhile, which is enough for releases.
 
 ## Next
-0. From the replay: (a) DONE 2026-11-12: existing-test guard + `may_change_tests`
-   (r3 rerun merged clean, no regression); (b) DONE 2026-11-12: claim probes, run by
-   `seam plan` on the untouched code (17 probes on 7 replay goals: 1 true catch,
-   r1's trap; 2 bad probes; 6 of 13 tasks unprobed); (c) DONE 2026-11-12:
-   proposals (`.seam-proposals`): the exact plan that escalated r1 now merges first
-   try with the side bug recorded as a proposal (1 controlled trial).
-1. Probe adjudication — deferred by owner (2026-11-11).
-2. A second-codebase replay benchmark (goals the planner has not seen) — skipped by
-   owner 2026-11-12; plan-and-run in one step stays off until the lead is measured.
-3. Done 2026-11-12: greeter case 2 over MCP (save_plan, run, status, inspect,
-   cancel); commit identity checked on real output; no credential found in process
-   args, state dir, repo files or git objects.
+1. **Proposals -> draft goal.** A command that gathers recorded proposals into a goal
+   text for `seam plan` (the step a human does by hand). Small; worth it once
+   proposals recur (1 so far).
+2. **Second-codebase benchmark** (when the owner wants it): generalize
+   `examples/boltons-replay/replay.py` beyond boltons, pick 6-8 recent merged fixes
+   from another Python project, same controls, ~$3-5. Measures the lead on goals it
+   was not tuned on.
+3. **Plan-and-run in one step**, only after 2 shows the lead holds up off boltons.
+4. Probe adjudication, if the owner reopens it.
+
+Done since the last list (2026-11-12/13): the three replay gaps (existing-test guard
++ `may_change_tests`, claim probes, worker proposals); branch namespaces and stranded
+`claimed` tasks (0.2.1); empty repositories, UNCHECKED claims, test_cmd vs suite
+(0.2.2); greeter case 2 over MCP; GitHub Pages is live (https://sc0vu.github.io/SEAM/).
 
 ## Spend
 2026-11-12: $0.12 (greeter case 2 over MCP) + $2.91 (replay benchmark, 7 goals) + $0.21 (r3 rerun) + $0.72 (two claim-probe re-plans) + $2.73 (full replay rerun) + $0.37 (r1 proposal trials).
