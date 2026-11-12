@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     base_sha      TEXT,                          -- main before this merge
     merge_sha     TEXT,                          -- the merge commit, recorded pre-publish
     pending_scope TEXT    NOT NULL DEFAULT '[]', -- JSON globs of a denied scope request
-    may_change_tests TEXT NOT NULL DEFAULT '[]'  -- JSON test ids the lead lets it rewrite
+    may_change_tests TEXT NOT NULL DEFAULT '[]', -- JSON test ids the lead lets it rewrite
+    proposals     TEXT    NOT NULL DEFAULT '[]'  -- JSON: separate work the worker set aside
 );
 -- Invariant 4 enforced by the database itself: at most one row may be `merging`.
 CREATE UNIQUE INDEX IF NOT EXISTS one_merging ON tasks(state) WHERE state = 'merging';
@@ -72,7 +73,8 @@ CREATE TABLE IF NOT EXISTS runs (
 """
 
 # Fields `transition` may set alongside a state change.
-_UPDATABLE = frozenset({"owner", "branch", "worktree_path", "review_notes", "diff"})
+_UPDATABLE = frozenset({"owner", "branch", "worktree_path", "review_notes", "diff",
+                        "proposals"})
 
 
 class TaskStore:
@@ -291,7 +293,7 @@ class TaskStore:
             if col not in cols:
                 self._db.execute(f"ALTER TABLE runs ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
         task_cols = {r["name"] for r in self._db.execute("PRAGMA table_info(tasks)")}
-        for col in ("pending_scope", "may_change_tests"):
+        for col in ("pending_scope", "may_change_tests", "proposals"):
             if col not in task_cols:
                 self._db.execute(f"ALTER TABLE tasks ADD COLUMN {col} TEXT NOT NULL DEFAULT '[]'")
 
@@ -398,4 +400,5 @@ def _to_task(row: sqlite3.Row) -> Task:
         base_sha=row["base_sha"],
         merge_sha=row["merge_sha"],
         pending_scope=tuple(json.loads(row["pending_scope"])),
+        proposals=tuple(json.loads(row["proposals"])),
     )

@@ -273,6 +273,7 @@ def test_old_task_table_gains_the_newer_columns(tmp_path):
     s = TaskStore(path)
     assert s.get(1).pending_scope == ()
     assert s.get(1).spec.may_change_tests == ()
+    assert s.get(1).proposals == ()
     s.close()
 
 

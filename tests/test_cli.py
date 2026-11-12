@@ -213,3 +213,24 @@ def test_version_is_the_installed_package_version(capsys):
     with pytest.raises(SystemExit):
         cli.parser().parse_args(["--version"])
     assert capsys.readouterr().out.strip() == f"seam-merge {expected}"
+
+
+def test_status_and_inspect_show_what_a_worker_set_aside(tmp_path, capsys):
+    import json as _json
+
+    from seam_merge.engine.states import Event
+    from seam_merge.store import TaskStore
+
+    state = str(tmp_path / "s")
+    assert cli.main(["add-goal", "--state-dir", state, "--plan", str(EXAMPLES / "case1.json")]) == 0
+    s = TaskStore(Path(state) / "seam.sqlite")
+    s.claim("w1", "backend")
+    s.transition(1, Event.START)
+    s.transition(1, Event.SUBMIT, proposals=_json.dumps(["Fix X in y.py\nbecause Z"]))
+    s.close()
+    capsys.readouterr()
+    assert cli.main(["status", "--state-dir", state]) == 0
+    assert "PROPOSED follow-ups" in (out := capsys.readouterr().out)
+    assert "task 1: Fix X in y.py" in out
+    assert cli.main(["inspect", "--state-dir", state, "--task", "1"]) == 0
+    assert "1. Fix X in y.py\n   because Z" in capsys.readouterr().out

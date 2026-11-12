@@ -42,3 +42,6 @@ class Task:
     base_sha: str | None = None
     merge_sha: str | None = None
     pending_scope: tuple[str, ...] = ()  # a denied scope request, retried while blocked
+    # Separate work the worker found and set aside instead of doing it here, from its
+    # latest submission. Proposals, not tasks: only the lead creates tasks (inv. 7).
+    proposals: tuple[str, ...] = ()

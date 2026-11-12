@@ -205,7 +205,8 @@ class Orchestrator:
             f"SEAM-Task: {task_id}\nSEAM-Worker: {worker_id}\nSEAM-Attempt: {task.attempts + 1}"
             + credits)
         diff = self.repo.diff(self.target, task.branch or "")
-        self.store.transition(task_id, Event.SUBMIT, diff=diff)
+        self.store.transition(task_id, Event.SUBMIT, diff=diff,
+                              proposals=json.dumps(list(result.proposals)))
 
     def _finish_review(self, task_id: int, fut: Future) -> None:
         try:

@@ -333,6 +333,13 @@ def cmd_status(args: argparse.Namespace) -> None:
         if t.state is State.NEEDS_HUMAN:
             print(f"\n== ESCALATED task {t.id}: {t.spec.description}\n{t.review_notes}")
             print(f"   rule on it: {_rulings(store, t.id)}")
+    proposed = [t for t in tasks if t.proposals and t.state is not State.CANCELLED]
+    if proposed:
+        print("\n== PROPOSED follow-ups (a worker set these aside; plan them as new goals "
+              "if wanted):")
+        for t in proposed:
+            for p in t.proposals:
+                print(f"   task {t.id}: {p.splitlines()[0][:150]}")
 
 
 def _rulings(store: TaskStore, task_id: int) -> str:
@@ -385,6 +392,10 @@ def cmd_inspect(args: argparse.Namespace) -> None:
         if r.outcome == "reject" and r.notes:
             print("         " + r.notes.strip().replace("\n", "\n         "))
     print(f"\n--- review notes ---\n{t.review_notes or '(none)'}")
+    if t.proposals:
+        print("\n--- proposed by the worker as separate tasks (not done here) ---")
+        for i, p in enumerate(t.proposals, 1):
+            print(f"{i}. " + p.replace("\n", "\n   "))
     print(f"\n--- diff ---\n{t.diff or '(none)'}")
 
 

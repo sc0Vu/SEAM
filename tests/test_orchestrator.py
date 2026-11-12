@@ -32,9 +32,10 @@ LIB = "def greet():\n    return 'hi'\n"
 class ScriptedWorker:
     """Runs `scripts[task.description](task, worktree, run_no)` -> files or globs."""
 
-    def __init__(self, id, scripts, type="backend", cost=0.0, barrier=None, co_authors=()):
+    def __init__(self, id, scripts, type="backend", cost=0.0, barrier=None, co_authors=(),
+                 proposals=()):
         self.id, self.type, self.scripts, self.cost = id, type, scripts, cost
-        self.barrier, self.co_authors = barrier, co_authors
+        self.barrier, self.co_authors, self.proposals = barrier, co_authors, proposals
         self.runs: list[tuple[int, str]] = []
 
     def run(self, task, worktree: Path) -> WorkerResult:
@@ -48,7 +49,7 @@ class ScriptedWorker:
             (worktree / name).parent.mkdir(parents=True, exist_ok=True)
             (worktree / name).write_text(text)
         return WorkerResult(diff="(see worktree)", cost_usd=self.cost,
-                            co_authors=self.co_authors)
+                            co_authors=self.co_authors, proposals=self.proposals)
 
 
 class ScriptedReviewer:
@@ -417,3 +418,22 @@ def test_operator_authors_seam_commits_and_models_are_credited(tmp_path):
     # The merge commit and, as its second parent, the worker's task commit.
     assert git(repo, "log", "-1", fmt, "main").split("|") == [str(operator), seam, ""]
     assert git(repo, "log", "-1", fmt, "main^2").split("|") == [str(operator), seam, str(model)]
+
+
+
+def test_proposals_are_kept_with_the_task_and_reach_the_reviewer(tmp_path):
+    class SeeingReviewer(ScriptedReviewer):
+        def review(self, request):
+            self.proposals = request.task.proposals
+            return super().review(request)
+
+    reviewer = SeeingReviewer()
+    w = ScriptedWorker("w1", {"count": writes({"count.py": "N = 1\n"})},
+                       proposals=("lib.greet mishandles empty names",))
+    _, store, _, orch = build(tmp_path, [w], reviewer=reviewer)
+    t = add(store, "count", ["count.py"])
+
+    assert orch.run().ids_in(State.MERGED) == [t.id]
+    assert store.get(t.id).proposals == ("lib.greet mishandles empty names",)
+    assert reviewer.proposals == ("lib.greet mishandles empty names",)
+    assert store.list(State.OPEN) == []  # a proposal is not a task (invariant 7)

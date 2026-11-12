@@ -31,7 +31,8 @@ worker runtime as pluggable.**
   task + a git worktree, returns a diff. Behind one interface
   `Worker.run(task, worktree) -> WorkerResult` (`seam_merge/workers/base.py`), where the result
   is exactly one of a `diff` or a `scope_request` (globs it needs outside its
-  file_scope — it stops rather than editing them, §5). v1 = Claude Code headless;
+  file_scope — it stops rather than editing them, §5), plus optional `proposals`:
+  separate work it found and set aside (§2, proposals). v1 = Claude Code headless;
   alternates = AgentScope `ReActAgent`, SWE-agent. No runtime specifics leak into the
   engine.
 - **Isolation = git worktrees** — one worktree + branch per in-flight task.
@@ -143,6 +144,18 @@ full source of what the diff touches, uses, or aliases), ~3x cheaper but less te
 dir (no project config). With no tools it can only read, so it runs outside the
 sandbox; the diff is labelled untrusted in the prompt, and a manipulated approve
 still has to pass the merge-time full suite.
+
+*Proposals: separate work a worker sets aside* (`WorkerResult.proposals`; Claude
+Code worker: the file `.seam-proposals`, removed before staging, at most 5
+paragraphs of 2,000 characters). Constraint served: invariant 7 keeps task creation
+with the lead, but a worker that finds a separate bug had only two moves, fix it out
+of task or drop it, and the reviewer rejects the first; in the replay that loop ended
+in a false escalation twice (§12, r1). Now the worker describes it instead of fixing
+it, and a test the task asks for that depends on it is marked `xfail(strict=True)`.
+The proposals are stored with the task (latest submission), shown to the reviewer as
+untrusted data, which accepts a deferral only if the work is genuinely outside the
+task, and listed by `status` and `inspect`. A proposal never becomes a task by
+itself: the lead, or a human through a new goal, decides.
 
 *The existing-test guard* (`seam_merge/reviewer/existing_tests.py`). Constraint
 served: invariant 5's second gate is only as strong as the suite, and a worker can
@@ -260,7 +273,9 @@ pending_scope[]  (globs of a denied scope request, kept while the task is `block
                   so it is retried even after a restart; cleared when granted),
 may_change_tests[]  (pre-existing tests, `path::[Class::]name`, the lead lets this
                      task rewrite because it deliberately changes what they assert;
-                     every other pre-existing test is guarded, §2 review gate)
+                     every other pre-existing test is guarded, §2 review gate),
+proposals[]  (separate work the worker set aside in its latest submission; text for
+              the reviewer and the lead, never a task by itself, §2)
 ```
 
 **Commit identity.** SEAM makes every commit (agents never run git), so the

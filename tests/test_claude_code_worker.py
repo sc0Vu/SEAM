@@ -11,6 +11,9 @@ from seam_merge.engine.usage import Usage
 from seam_merge.sandbox.base import RunResult
 from seam_merge.workers import Worker, WorkerFailed
 from seam_merge.workers.claude_code import (
+    MAX_PROPOSAL_CHARS,
+    MAX_PROPOSALS,
+    PROPOSALS_FILE,
     SCOPE_REQUEST_FILE,
     ClaudeCodeWorker,
     co_authors_from_result,
@@ -167,3 +170,33 @@ def test_prompt_names_the_existing_tests_the_task_may_rewrite():
                        may_change_tests=("tests/test_a.py::test_x",))
     t = Task(id=7, spec=allowed, state=State.IN_PROGRESS, owner="w1")
     assert "Only these may be rewritten:\n  tests/test_a.py::test_x" in w.prompt(t)
+
+
+
+def test_proposals_ride_on_the_result_and_are_never_committed(worktree):
+    def work(wd):
+        (wd / "shout.py").write_text("S = 1\n")
+        (wd / PROPOSALS_FILE).write_text(
+            "_DeferredLine.__str__ returns None\nwhen a line is missing.\r\n\r\n"
+            "Second: rename x.\n\n\n")
+
+    res = ClaudeCodeWorker("w1", "backend", FakeClaudeSandbox(effect=work)).run(task(), worktree)
+    assert res.proposals == ("_DeferredLine.__str__ returns None\nwhen a line is missing.",
+                             "Second: rename x.")
+    assert PROPOSALS_FILE not in res.diff and not (worktree / PROPOSALS_FILE).exists()
+    assert "shout.py" in res.diff
+
+
+def test_proposals_are_bounded(worktree):
+    def work(wd):
+        (wd / "shout.py").write_text("S = 1\n")
+        (wd / PROPOSALS_FILE).write_text("\n\n".join("p" * 5000 for _ in range(9)))
+
+    res = ClaudeCodeWorker("w1", "backend", FakeClaudeSandbox(effect=work)).run(task(), worktree)
+    assert len(res.proposals) == MAX_PROPOSALS
+    assert all(len(p) == MAX_PROPOSAL_CHARS for p in res.proposals)
+
+
+def test_prompt_explains_how_to_set_separate_work_aside():
+    prompt = ClaudeCodeWorker("w1", "backend", FakeClaudeSandbox()).prompt(task())
+    assert PROPOSALS_FILE in prompt and "xfail(strict=True" in prompt

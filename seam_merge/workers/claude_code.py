@@ -18,6 +18,20 @@ from seam_merge.sandbox.base import Sandbox
 from seam_merge.workers.base import WorkerFailed, WorkerResult
 
 SCOPE_REQUEST_FILE = ".seam-scope-request"
+PROPOSALS_FILE = ".seam-proposals"
+MAX_PROPOSALS, MAX_PROPOSAL_CHARS = 5, 2000  # agent output: bounded before it is stored
+
+
+def read_proposals(worktree: Path) -> tuple[str, ...]:
+    """Take the worker's proposals file out of the worktree (it is never committed)
+    and return its blank-line-separated paragraphs, bounded in count and length."""
+    path = worktree / PROPOSALS_FILE
+    if not path.exists():
+        return ()
+    text = path.read_text(errors="replace")
+    path.unlink()
+    paragraphs = [p.strip() for p in text.replace("\r\n", "\n").split("\n\n") if p.strip()]
+    return tuple(p[:MAX_PROPOSAL_CHARS] for p in paragraphs[:MAX_PROPOSALS])
 # What a worker needs to edit and test code. Web, sub-agent and notebook tools are left
 # out: the credential proxy would refuse their traffic anyway, and every tool's
 # definition is resent on every request.
@@ -39,6 +53,12 @@ Rules:
   the file `{request_file}` and stop immediately. A lead will decide.
 - Never change a shared interface (a signature other modules use) unless the task
   explicitly says to.
+- If you find a separate problem the task did not ask you to fix (a bug elsewhere, a
+  follow-up), do NOT fix it here. Describe it in `{proposals_file}`, one paragraph
+  each: what is wrong, where, and why it matters. A lead decides whether it becomes a
+  task. If a test the task asks for cannot pass without that separate fix, still write
+  the test, mark it `@pytest.mark.xfail(strict=True, reason="needs: <proposal>")`, and
+  say so in the proposal.
 - Add or update tests for your change, inside your scope. The task's tests run with:
   {test_cmd}
 - Tests that already exist record current behavior: keep every original statement
@@ -139,6 +159,7 @@ class ClaudeCodeWorker:
             spec=task.spec.spec_ref or "(none beyond the task)",
             scope=", ".join(task.spec.file_scope),
             request_file=SCOPE_REQUEST_FILE,
+            proposals_file=PROPOSALS_FILE,
             test_cmd=task.spec.test_cmd or "(none given)",
             may_change=", ".join(task.spec.may_change_tests) or "(none)",
             feedback=_FEEDBACK.format(notes=notes.replace("\n", "\n  ")) if notes else "",
@@ -171,6 +192,7 @@ class ClaudeCodeWorker:
         if data.get("is_error") or not result.ok:
             raise WorkerFailed(f"claude run failed: {data.get('result')!r}", cost, usage)
 
+        proposals = read_proposals(worktree)  # removed before anything is staged
         request = worktree / SCOPE_REQUEST_FILE
         if request.exists():
             globs = tuple(g.strip() for g in request.read_text().splitlines() if g.strip())
@@ -182,4 +204,5 @@ class ClaudeCodeWorker:
         if not diff:
             raise WorkerFailed("claude run changed nothing", cost, usage)
         return WorkerResult(diff=diff, cost_usd=cost, usage=usage,
-                            co_authors=co_authors_from_result(data, self.model))
+                            co_authors=co_authors_from_result(data, self.model),
+                            proposals=proposals)
