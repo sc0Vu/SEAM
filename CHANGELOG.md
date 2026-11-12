@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.2 — 2026-11-13
+
+- **Empty repositories.** `seam plan` plans a from-scratch goal against an empty
+  snapshot instead of failing at `rev-parse main^{commit}`. `seam run` refuses up
+  front with the one command that fixes it (`git commit --allow-empty -m "initial
+  commit" && git checkout --detach`), instead of clone-and-detach advice that cannot
+  work on a branch with no commits. Empty trees export cleanly, and a pytest suite
+  that collects no tests passes the starting check (only; merges stay strict).
+- **Unchecked claims.** `seam plan` lists each task whose contract states current
+  behavior ("existing", "unchanged", ...) without a probe to check it, as UNCHECKED,
+  and records them in the plan (`unprobed_claims`).
+- **Test commands vs the full suite.** `seam plan --suite-cmd` tells the planner what
+  the merge suite runs and warns for a task with no `test_cmd`, or a pytest `test_cmd`
+  missing the suite's doctest flags (it could pass review, then fail at merge);
+  `seam run --plan` repeats the warning.
+
 ## 0.2.1 — 2026-11-12
 
 Fixes for running more than one state dir on the same repository.
