@@ -24,15 +24,19 @@ Last updated: 2026-11-13. State: released **seam-merge 0.2.3** on PyPI (tag v0.2
 - Linux: containers run as the host uid:gid with HOME=/tmp.
 
 ### Human in the loop
-- `cli.py resolve | rework | cancel` for escalated tasks; resolve refused unless a
+- `seam resolve | rework | rereview | cancel` for escalated tasks; resolve refused unless a
   review approved the branch as-is (invariant 5). Rulings recorded as `human` runs.
 - Writer lock (`flock`) on the state dir: every state-writing command; `status` shows
   the holder.
-- `mcp_server.py`: the CLI as MCP tools over stdio; state dir, repos and per-call
+- `seam-mcp`: the CLI as MCP tools over stdio; state dir, repos and per-call
   spend cap fixed at launch. Checked against the official mcp 2.3.0 client.
   A job's exit is logged by the job's own process, so `job` reports it even after
   the server exits or restarts (lost before: found in the case 2 run below).
 - Owner decision 2026-11-11: no AI resolver for escalations; keep the current design.
+- Worker proposals (`.seam-proposals`): a bug found outside the task is set aside, not
+  fixed out of scope; the reviewer judges the deferral; `status` / `inspect` list them;
+  `seam proposals` drafts them as a goal for a human to edit (never planned from
+  automatically).
 
 ### Robustness
 - Denied scope requests stored with the task (`pending_scope`), retried after restart.
@@ -43,6 +47,10 @@ Last updated: 2026-11-13. State: released **seam-merge 0.2.3** on PyPI (tag v0.2
 - `run` checks the full suite on the target before loading or spending, and refuses a
   red target. When a merged tree fails, the engine also tests the target alone, so a
   broken target is not reported as a semantic conflict.
+- Task branches `seam/<namespace>/task-<id>`, one namespace per state dir; merged
+  branches deleted, escalated ones kept; tasks stuck in `claimed` started again.
+- Empty repositories: `plan` from an empty snapshot; `run` names the one command it
+  needs first; "no tests collected" passes the starting check only.
 
 ### Accounting and cost
 - `runs` table: cost, tokens (input / cache read / cache write / output), review
@@ -56,11 +64,17 @@ Last updated: 2026-11-13. State: released **seam-merge 0.2.3** on PyPI (tag v0.2
   `--review-context focused` opt-in).
 - Adversarial probe tests (`--review-probes`, opt-in): reviewer writes pytest probes,
   the gate runs them in the sandbox, any failure rejects.
+- Existing-test guard: a change that deletes, rewrites or silences (skip/xfail, early
+  return) a pre-existing test is rejected before tests or a model run, unless the task
+  lists it in `may_change_tests`.
 
 ### AI lead
 - `Planner` interface (`coordinator/planner.py`), sandboxed Claude Code planner
-  (`planners/claude_code.py`, read-only tools, structured output), `cli.py plan`.
+  (`planners/claude_code.py`, read-only tools, structured output), `seam plan`.
 - Plans validated by `plan_from_dict`, same rules as hand-written plans.
+- Checks at the plan checkpoint (`seam plan`): claim probes run on the untouched code
+  (failures reported), statements about current behavior with no probe flagged
+  UNCHECKED, and each `test_cmd` compared with `--suite-cmd` (missing doctest flags).
 
 ### Project
 - README, AGPL-3.0-only license, GitHub Pages site (`site/`, deploys on push),
@@ -101,7 +115,7 @@ Last updated: 2026-11-13. State: released **seam-merge 0.2.3** on PyPI (tag v0.2
 - Releases: bump version + CHANGELOG, push `v<version>`; `release.yml` publishes via
   PyPI trusted publishing (no stored token) and creates the GitHub release.
 
-## Results (single runs; author-chosen repos and tasks)
+## Results (single runs; bench and greeter goals author-chosen, replay goals not)
 
 | run | outcome | cost |
 |---|---|---|
@@ -114,6 +128,8 @@ Last updated: 2026-11-13. State: released **seam-merge 0.2.3** on PyPI (tag v0.2
 | LLM planner on the bench-1 goal, run unedited (bench4) | same 8-task plan; 8/8 merged, 806 green; probes: 1 inherited defect | $1.44 |
 | replay: 7 merged boltons fixes (goals from contributor PRs, maintainers' hidden tests) | 15 tasks: 14 merged, 1 false escalation; 27/27 hidden target tests where merged; 1 silent API break from a wrong planner contract | $2.91 |
 | replay rerun with the existing-test guard + claim probes | 13 tasks: 12 merged, 1 false escalation (r1 again); 27/27 hidden where merged; 0 regressions | $2.73 |
+| replay r3 rerun (guard + `may_change_tests`) | merged first try, 3/3 hidden, no regression (the original run broke the API) | $0.21 |
+| replay r1, the plan that escalated, rerun with proposals | merged first try, 1/1 hidden; the side bug recorded as a proposal (1 controlled trial) | $0.12 |
 | greeter case 2, driven entirely over MCP (2026-11-12) | farewell merged; rename escalated as a semantic conflict, main never broke; cancelled over MCP | $0.12 |
 
 ## Key findings
@@ -126,6 +142,9 @@ Last updated: 2026-11-13. State: released **seam-merge 0.2.3** on PyPI (tag v0.2
 - **Escalation rate alone is misleading**: a run can merge everything and still ship
   defects. A silent-defect check is needed alongside merged / needs_human.
 - First real-code escalation (replay r1), and it was false: the branch was correct.
+  It recurred in the rerun; with worker proposals the same plan merged first try.
+- With the 2026-11-12 guards, the full replay rerun had 0 regressions (vs 1), but
+  the guards were shaped on those same 7 goals: not yet an independent result.
 - Replay (independent goals): the planner decomposes well; its *contract* is the weak
   point. r3's planner invented "missing source raises", the reviewer enforced it, the
   worker rewrote an existing test to match, and an API break merged. r1's planner
@@ -159,22 +178,25 @@ Last updated: 2026-11-13. State: released **seam-merge 0.2.3** on PyPI (tag v0.2
   through the public API meanwhile, which is enough for releases.
 
 ## Next
-1. DONE 2026-11-13: `seam proposals [--out]` drafts a goal from recorded proposals,
-   labelled as unverified agent text, for a human to edit before `seam plan`.
-2. **Second-codebase benchmark** (when the owner wants it): generalize
+1. **Second-codebase benchmark** (when the owner wants it): generalize
    `examples/boltons-replay/replay.py` beyond boltons, pick 6-8 recent merged fixes
    from another Python project, same controls, ~$3-5. Measures the lead on goals it
    was not tuned on.
-3. **Plan-and-run in one step**, only after 2 shows the lead holds up off boltons.
-4. Probe adjudication, if the owner reopens it.
+2. **Plan-and-run in one step**, only after 1 shows the lead holds up off boltons.
+3. Probe adjudication, if the owner reopens it.
 
 Done since the last list (2026-11-12/13): the three replay gaps (existing-test guard
 + `may_change_tests`, claim probes, worker proposals); branch namespaces and stranded
 `claimed` tasks (0.2.1); empty repositories, UNCHECKED claims, test_cmd vs suite
-(0.2.2); greeter case 2 over MCP; GitHub Pages is live (https://sc0vu.github.io/SEAM/).
+(0.2.2); `seam proposals` (0.2.3); greeter case 2 over MCP; GitHub Pages is live
+(https://sc0vu.github.io/SEAM/).
 
 ## Spend
-2026-11-12: $0.12 (greeter case 2 over MCP) + $2.91 (replay benchmark, 7 goals) + $0.21 (r3 rerun) + $0.72 (two claim-probe re-plans) + $2.73 (full replay rerun) + $0.37 (r1 proposal trials).
+2026-11-13: $0 (no model runs: fixes, checks and releases 0.2.2-0.2.3).
+2026-11-12: $7.06 = $0.12 (greeter case 2 over MCP) + $2.91 (replay benchmark, 7 goals)
++ $0.21 (r3 rerun) + $0.72 (two claim-probe re-plans) + $2.73 (full replay rerun) +
+$0.37 (r1 proposal trials). (A running total of $9.79 reported in-session counted the
+rerun twice; $7.06 is the sum of the items.)
 2026-11-11: $1.44 (bench4 planning $0.08 + run $1.36).
 Before: ≈ $6 API-equivalent so far (subscription usage): $2.72 in run records (bench1 $0.67,
 bench2 $1.35, bench3 $0.47, token-measurement runs $0.24), plus ≈ $0.80 of greeter runs
