@@ -10,6 +10,8 @@ __pycache__/
 .ruff_cache/
 .venv/
 *.egg-info/
+build/
+dist/
 
 # runtime state
 *.sqlite

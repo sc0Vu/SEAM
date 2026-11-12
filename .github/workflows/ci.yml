@@ -45,3 +45,27 @@ jobs:
         run: seam image build
       - name: Sandbox and credential-proxy isolation tests (real containers)
         run: pytest -q -rs tests/test_sandbox.py tests/test_proxy.py
+
+  # The package as users get it: build, check the metadata, install the wheel into
+  # a clean venv and run the suite against that install with the source tree moved
+  # away, so a file missing from the wheel fails here rather than for users.
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: pip install build twine
+      - run: python -m build
+      - run: twine check --strict dist/*
+      - name: Install the wheel into a clean venv
+        run: |
+          python -m venv /tmp/wheel-venv
+          /tmp/wheel-venv/bin/pip install dist/*.whl pytest
+          /tmp/wheel-venv/bin/seam --help > /dev/null
+          /tmp/wheel-venv/bin/seam-mcp --help > /dev/null
+      - name: Test the installed wheel, not the checkout
+        run: |
+          mv seam_merge /tmp/seam_merge-src
+          PATH=/tmp/wheel-venv/bin:$PATH /tmp/wheel-venv/bin/python -m pytest -q

@@ -1,15 +1,36 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]  # PEP 639 license expressions
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "seam"
+name = "seam-merge"  # "seam" on PyPI is an unrelated SDK; the import package is seam_merge
 version = "0.0.1"
 description = "Software Engineering Agent Merge: many agents, one codebase, one seam."
+readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "AGPL-3.0-only"}
-classifiers = ["License :: OSI Approved :: GNU Affero General Public License v3"]
+license = "AGPL-3.0-only"
+license-files = ["LICENSE"]
+authors = [{name = "sc0Vu"}]
+keywords = ["agents", "multi-agent", "git", "merge", "code-review", "claude-code", "mcp"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",  # not Windows: the writer lock uses fcntl
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Version Control :: Git",
+]
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/sc0Vu/SEAM"
+Source = "https://github.com/sc0Vu/SEAM"
+Issues = "https://github.com/sc0Vu/SEAM/issues"
+Architecture = "https://github.com/sc0Vu/SEAM/blob/main/doc/architecture.md"
 
 [project.scripts]
 seam = "seam_merge.cli:main"
@@ -20,7 +41,7 @@ packages = {find = {include = ["seam_merge*"]}}
 package-data = {"seam_merge.sandbox" = ["Dockerfile"]}
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.5"]
+dev = ["pytest>=8", "ruff>=0.5", "build>=1.2", "twine>=6"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
