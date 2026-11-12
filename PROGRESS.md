@@ -1,7 +1,7 @@
 # SEAM progress log
 
-Last updated: 2026-11-12. State: released **seam-merge 0.2.0** on PyPI (tag v0.2.0);
-359 tests passing, ruff clean. Design and every measurement: `doc/architecture.md` (§8, §10–§12).
+Last updated: 2026-11-12. State: released **seam-merge 0.2.1** on PyPI (tag v0.2.1);
+368 tests passing, ruff clean. Design and every measurement: `doc/architecture.md` (§8, §10–§12).
 
 ## Done
 
@@ -73,6 +73,11 @@ Last updated: 2026-11-12. State: released **seam-merge 0.2.0** on PyPI (tag v0.2
 - Lead refuses to load the same goal twice; scope requests count toward the retry
   bound.
 
+### Release 0.2.1 (2026-11-12)
+- Task branches namespaced per state dir (`seam/<ns>/task-<id>`); merged ones deleted;
+  tasks stuck in `claimed` are started again. Found by asking whether `--target`
+  changes branch names: two state dirs on one repo collided on `seam/task-1`.
+
 ### Release 0.2.0 (2026-11-12)
 - Existing-test guard, claim probes in `seam plan`, worker proposals; see CHANGELOG.
 
@@ -140,8 +145,8 @@ Last updated: 2026-11-12. State: released **seam-merge 0.2.0** on PyPI (tag v0.2
    proposals (`.seam-proposals`): the exact plan that escalated r1 now merges first
    try with the side bug recorded as a proposal (1 controlled trial).
 1. Probe adjudication — deferred by owner (2026-11-11).
-2. Planner measurements on goals NOT written by the author (the real test), with a
-   silent-defect check; and a goal whose tasks genuinely conflict.
+2. A second-codebase replay benchmark (goals the planner has not seen) — skipped by
+   owner 2026-11-12; plan-and-run in one step stays off until the lead is measured.
 3. Done 2026-11-12: greeter case 2 over MCP (save_plan, run, status, inspect,
    cancel); commit identity checked on real output; no credential found in process
    args, state dir, repo files or git objects.
