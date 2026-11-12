@@ -267,3 +267,48 @@ def test_planning_snapshot_of_an_empty_repo_is_an_empty_tree(tmp_path):
     assert cli.snapshot(repo, "main", dest) is False and list(dest.iterdir()) == []
     git(repo.path, "commit", "-q", "--allow-empty", "-m", "init")
     assert cli.snapshot(repo, "main", dest) is True and list(dest.iterdir()) == []
+
+
+def _state_with_proposals(tmp_path, proposals):
+    import json as _json
+
+    from seam_merge.engine.states import Event
+    from seam_merge.store import TaskStore
+
+    state = str(tmp_path / "s")
+    assert cli.main(["add-goal", "--state-dir", state, "--plan", str(EXAMPLES / "case1.json")]) == 0
+    s = TaskStore(Path(state) / "seam.sqlite")
+    s.claim("w1", "backend")
+    s.transition(1, Event.START)
+    s.transition(1, Event.SUBMIT, proposals=_json.dumps(proposals))
+    s.close()
+    return state
+
+
+def test_proposals_become_a_draft_goal_labelled_as_agent_written(tmp_path, capsys):
+    state = _state_with_proposals(tmp_path, ["_DeferredLine.__str__ returns None", "Second"])
+    capsys.readouterr()
+    assert cli.main(["proposals", "--state-dir", state]) == 0
+    goal = capsys.readouterr().out
+    assert goal.startswith("Fix the following problems, found by SEAM workers")
+    assert "not verified: check it against the code" in goal
+    assert "### From task 1 (submitted)" in goal
+    assert "_DeferredLine.__str__ returns None" in goal and "Second" in goal
+
+
+def test_proposals_written_to_a_file_never_overwrite(tmp_path, capsys):
+    state = _state_with_proposals(tmp_path, ["X"])
+    out = tmp_path / "goal.txt"
+    assert cli.main(["proposals", "--state-dir", state, "--out", str(out)]) == 0
+    assert "### From task 1" in out.read_text()
+    assert "read and edit it" in capsys.readouterr().out
+    assert cli.main(["proposals", "--state-dir", state, "--out", str(out)]) == 1
+    assert "exists" in capsys.readouterr().err
+
+
+def test_no_proposals_says_so(tmp_path, capsys):
+    state = str(tmp_path / "s")
+    assert cli.main(["add-goal", "--state-dir", state, "--plan", str(EXAMPLES / "case1.json")]) == 0
+    capsys.readouterr()
+    assert cli.main(["proposals", "--state-dir", state]) == 0
+    assert capsys.readouterr().out.strip() == "no proposals recorded"

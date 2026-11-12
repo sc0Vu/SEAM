@@ -126,6 +126,7 @@ and free the branch: `git commit --allow-empty -m "initial commit" && git checko
 | `seam run --repo R` | resume the tasks already in the state dir |
 | `seam add-goal --plan plan.json` | load a plan without running it |
 | `seam status` | task states, the merge slot and queue, escalations, cost and tokens |
+| `seam proposals [--out goal.txt]` | draft a goal from the bugs workers set aside instead of fixing out of scope; agent-written, so read it before `seam plan` |
 | `seam inspect --task N` | one task: branch, diff, every run with its cost, rejection notes |
 | `seam resolve --task N` | requeue an escalated task whose branch a review approved (it escalated at merge); the full suite still runs |
 | `seam rework --task N --notes "…"` | send an escalated task back to a worker with your guidance |

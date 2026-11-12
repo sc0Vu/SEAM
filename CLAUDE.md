@@ -106,6 +106,7 @@ seam inspect --task <id>                    # one task's branch, diff, review no
 seam resolve|rework|rereview|cancel --task <id>  # a human's ruling on an escalation
 seam amend --from-goal <id> --plan <new.json>  # change a goal's direction
 seam image build                            # build the sandbox image (once)
+seam proposals [--out goal.txt]             # draft a goal from workers' proposals
 pytest && ruff check .                      # test + lint gate (use .venv/bin/)
 ```
 All but `image build` take `--state-dir` (default `./.seam`). The real-agent v1 run is

@@ -354,6 +354,41 @@ def cmd_image_build(args: argparse.Namespace) -> None:
     print(f"built {args.image}")
 
 
+def proposals_goal(tasks) -> str:
+    """Every recorded proposal as a draft goal for `seam plan`, or '' if none.
+
+    Proposals are text written by worker agents, and a goal instructs the planner, so
+    the draft says so at the top: it is for a human to read, edit and then plan from,
+    never planned from automatically (invariant 7: the lead, with a human at the plan
+    checkpoint, decides what becomes a task)."""
+    found = [(t, p) for t in tasks for p in t.proposals]
+    if not found:
+        return ""
+    parts = ["Fix the following problems, found by SEAM workers while doing other tasks "
+             "and set aside rather than fixed there. Each is the worker's own description, "
+             "not verified: check it against the code before planning a fix.\n"]
+    for t, p in found:
+        parts.append(f"### From task {t.id} ({t.state}): {t.spec.description[:80]}\n\n{p}\n")
+    return "\n".join(parts)
+
+
+def cmd_proposals(args: argparse.Namespace) -> None:
+    """Print, or write to --out, a draft goal made of the recorded proposals."""
+    goal = proposals_goal(_store(args.state_dir).list())
+    if not goal:
+        print("no proposals recorded")
+        return
+    if args.out is None:
+        print(goal)
+        return
+    out = Path(args.out)
+    if out.exists():
+        raise PreflightError(f"{out} exists; pick another --out")
+    out.write_text(goal)
+    print(f"wrote {out}: written by worker agents, so read and edit it, then: "
+          f"seam plan --repo <clone> --goal \"$(cat {out})\" --out <plan.json>")
+
+
 def cmd_status(args: argparse.Namespace) -> None:
     tasks = _store(args.state_dir).list()
     counts = Counter(t.state for t in tasks)
@@ -377,8 +412,8 @@ def cmd_status(args: argparse.Namespace) -> None:
             print(f"   rule on it: {_rulings(store, t.id)}")
     proposed = [t for t in tasks if t.proposals and t.state is not State.CANCELLED]
     if proposed:
-        print("\n== PROPOSED follow-ups (a worker set these aside; plan them as new goals "
-              "if wanted):")
+        print("\n== PROPOSED follow-ups (a worker set these aside; `seam proposals` drafts "
+              "them as a goal):")
         for t in proposed:
             for p in t.proposals:
                 print(f"   task {t.id}: {p.splitlines()[0][:150]}")
@@ -513,6 +548,11 @@ def parser() -> argparse.ArgumentParser:
     ib.add_argument("--image", default=DEFAULT_IMAGE, help="tag to build")
     ib.add_argument("--claude-code-version", help="override the pinned Claude Code version")
     ib.set_defaults(func=cmd_image_build)
+
+    pr = sub.add_parser("proposals", help="draft a goal from the work workers set aside")
+    common(pr)
+    pr.add_argument("--out", help="write the draft goal here (default: print it)")
+    pr.set_defaults(func=cmd_proposals)
 
     s = sub.add_parser("status", help="task states, merge queue, escalations")
     common(s)
