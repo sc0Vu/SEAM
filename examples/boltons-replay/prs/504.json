@@ -1,0 +1,7 @@
+{
+  "number": 504,
+  "title": "Shrink paths correctly when the user home is a filesystem root",
+  "body": "## The change\n\n`shrinkuser` now recognizes child paths when the home directory is a filesystem root. With home `/`, `/project/file` previously stayed unchanged because the code expected an additional separator after the home prefix. It now becomes `~/project/file`; custom home markers work too, while sibling paths remain untouched.\n\nThe root-home regression fails before the change. All 673 tests and module doctests pass on Python 3.11.15, including the existing sibling-prefix and ordinary-home cases.\n\n## The backstory\n\nThis follows the utility-library investigation in #502. A root home is a useful boundary for minimal/container environments. This was found by source inspection and a controlled path test, not by claiming personal production usage.\n\n## AI assistance\n\n- Harness/tooling: OpenAI Codex acting on behalf of rupayon123.\n- Model: GPT-6-based Codex; exact backend variant not exposed.\n- Original task excerpt: “Execute my daily GitHub contribution and maintenance workflow on my behalf. Do real, verified work, not only research, a plan, configuration changes, or a status summary.” Required reproducible, tested fixes and no duplicate patches.\n",
+  "url": "https://github.com/mahmoud/boltons/pull/504",
+  "is_pr": true
+}

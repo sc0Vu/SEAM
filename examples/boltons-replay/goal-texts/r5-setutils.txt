@@ -1,0 +1,98 @@
+Fix the following problems in boltons, as described by contributors. Add or update tests for each fix.
+
+### Fix IndexedSet indices after trimming a fragmented dead tail (boltons#577)
+
+Trim all dead-index intervals belonging to a removed `IndexedSet` tail, rather than only the final interval. Adjacent intervals can remain separate, so trimming the entire tail while retaining an earlier interval makes later additions return incorrect scalar and inverse indices.
+
+Reproducer on current master:
+
+```python
+from boltons.setutils import IndexedSet
+
+items = IndexedSet(range(39))
+for value in (0, 37, 36, 38):
+    items.remove(value)
+items.add(39)
+assert list(items) == list(range(1, 36)) + [39]
+assert items.index(39) == 35  # currently returns 34
+```
+
+The fix leaves interval creation, compaction thresholds, and slice semantics unchanged. It removes only intervals entirely within the tail already removed from storage. Six regression/control cases cover `remove` and `discard`, tails spanning two or three intervals, the already-merged control case, and positive/negative/inverse indexing after each addition.
+
+Verification on macOS / CPython 3.14.6:
+
+- New regression cases against unchanged source: **4 failed, 2 passed**.
+- Patched package tests and module doctests: **682 passed, 12 subtests passed, 2 deselected**.
+- The two deselected tests are `test_socketutils_netstring` and `test_socketutils_netstring_timeout`: they require loopback sockets and fail with `PermissionError` under the network-denying sandbox on both unchanged and patched source. No unrestricted/full-suite success is claimed.
+- Independent deterministic check: **200 seeds, 16,000 remove/discard/add operations, 3,333,636 scalar/inverse-index assertions passed**.
+- The same deterministic check also passed on CPython 3.9.6; pytest was run only on 3.14.6.
+- `git diff --check` passed. Other Python/OS matrix jobs were not run locally.
+
+Targeted issue/PR searches found no matching tail-trimming fix. This does not change the `pop` index validation in #535, iterator set operations in #503, multi-input updates in #494, or slicing fixed by #424.
+
+### Fix IndexedSet.pop integer-index validation (boltons#535)
+
+Normalize explicit `IndexedSet.pop()` indices with `operator.index()` before
+comparisons or mutation, matching the existing `__getitem__` behavior. Currently
+`IndexedSet(range(4)).pop(3.0)` silently removes the last element, while valid
+`__index__` objects are rejected or compared before normalization.
+
+Keep the existing `None` default, integer/bool behavior, dead-slot mapping and
+compaction unchanged. Regression coverage checks rejected indices leave state
+intact and accepted indices agree with `list.pop()` in dense/sparse layouts.
+
+### Fix zero- and multi-input IndexedSet updates (boltons#494)
+
+Fix `IndexedSet.difference_update()` and `intersection_update()` when given zero or multiple input sets. Calling either without arguments currently empties the set. With `{1, 2, 3, 4}` and inputs `{1, 2}`, `{2, 3}`, difference update leaves `{1, 3, 4}` instead of `{4}`, while intersection update leaves `{1, 2, 3}` instead of `{2}`.
+
+Compute the removal set using membership in any input (difference) or absence from any input (intersection), before mutating the receiver. This preserves insertion order and the existing bulk-removal path. Fourteen regression/control cases cover empty argument lists, overlapping and disjoint inputs, empty sets, self operands, and large removals. Thirteen fail on the original implementation; all 686 tests and doctests pass on Windows with Python 3.12.10.
+
+### Preserve set semantics for iterator operands and repeated XOR values (boltons#503)
+
+`IndexedSet` now preserves set semantics when intersection, difference or symmetric difference receives a one-shot iterator. Membership checks previously consumed the operand, and symmetric difference reused an exhausted iterator. In-place XOR also toggled duplicate values repeatedly and skipped values when given an iterator over itself.
+
+Snapshot iterator operands before repeated membership checks and deduplicate in-place XOR inputs. Reusable set/list operands retain their existing membership behavior. Existing output ordering is preserved.
+
+Five regressions fail before the change. The full suite and module doctests pass afterward: **677 passed** on Python 3.11.15. This does not duplicate PR494, which corrects multi-operand intersection/difference update semantics.
+
+### Fix complement set intersection membership and in-place state (boltons#516)
+
+Correct three intersection branches in `setutils.complement`:
+
+- For an included-form set intersected with a complement, subtract the excluded values from the included values, not the reverse.
+- When `&=` intersects a complement with a finite set, switch to the included representation.
+- When `&=` intersects an included-form set with a complement, keep the included representation.
+
+For example, `complement(complement({1, 2})) & complement({2, 3})` currently yields `{3}` instead of `{1}`. Also, after `value = complement({1, 2}); value &= {2, 3}`, the result currently excludes `3` and contains unrelated values such as `0`, instead of being the finite set `{3}`.
+
+The fix preserves in-place object identity and leaves the right operand unchanged. It adds 148 regression/control cases covering ordinary sets, both complement representations, set/frozenset backing, overlapping/disjoint/equal/empty inputs, reversed operands, the method API, and self-intersection. Expected membership is computed using ordinary sets, including probes outside both inputs.
+
+Validation on Windows, Python 3.13.15:
+
+- Before the fix: **52 failed, 96 passed** among the added cases.
+- After the fix: setutils tests **164 passed**.
+- Full suite with module doctests: **826 passed, 12 subtests passed**, both from source and from the built/installed wheel.
+- Both changed methods have 100% statement and branch coverage.
+- Additional local exhaustive check: all pairs of subsets of four values, both backing types independently, and each supported operand representation; **6,144 scenarios / 24,576 operation checks passed**, including an outside membership probe.
+- Clean-export sdist/wheel builds, `twine check`, `pip check`, and `git diff --check` passed.
+
+Other Python/OS combinations have not been run locally. This is separate from #487 (symmetric difference) and #494/#503 (IndexedSet operations).
+
+### Correct complement set symmetric differences (boltons#487)
+
+`complement({1, 2}) ^ {2, 3}` currently returns `complement({1})`, so it still contains `3` even though `3` belongs to both operands. `symmetric_difference_update()` gives a different wrong result: it leaves `2` excluded although `2` belongs only to the right operand.
+
+Apply symmetric difference to the stored finite sets when exactly one operand is complemented. This follows `(~A) ^ B == ~(A ^ B)` and fixes both the operator and the mutating method.
+
+Add 40 regression cases covering overlapping, identical, disjoint, and empty inputs; ordinary sets, frozensets, and both complement representations; reversed operands; and applying the update twice to restore the original membership. Expected results come from ordinary set operations on sampled membership, including values outside both finite inputs.
+
+Validation on Linux:
+
+- Before the fix: 19 of the 40 regression cases fail.
+- Python 3.10.20: `python -m pytest --doctest-modules boltons tests -q` — 712 passed.
+- Python 3.14: `uvx --with tox-uv tox -e py314 -- -q` — 712 passed, including package build and doctests.
+- `git diff --check` passes.
+
+Made with Astra on Codex
+
+The full test suite (python -m pytest -q --doctest-modules boltons tests) must stay green.

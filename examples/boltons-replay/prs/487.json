@@ -1,0 +1,7 @@
+{
+  "number": 487,
+  "title": "Correct complement set symmetric differences",
+  "body": "`complement({1, 2}) ^ {2, 3}` currently returns `complement({1})`, so it still contains `3` even though `3` belongs to both operands. `symmetric_difference_update()` gives a different wrong result: it leaves `2` excluded although `2` belongs only to the right operand.\r\n\r\nApply symmetric difference to the stored finite sets when exactly one operand is complemented. This follows `(~A) ^ B == ~(A ^ B)` and fixes both the operator and the mutating method.\r\n\r\nAdd 40 regression cases covering overlapping, identical, disjoint, and empty inputs; ordinary sets, frozensets, and both complement representations; reversed operands; and applying the update twice to restore the original membership. Expected results come from ordinary set operations on sampled membership, including values outside both finite inputs.\r\n\r\nValidation on Linux:\r\n\r\n- Before the fix: 19 of the 40 regression cases fail.\r\n- Python 3.10.20: `python -m pytest --doctest-modules boltons tests -q` — 712 passed.\r\n- Python 3.14: `uvx --with tox-uv tox -e py314 -- -q` — 712 passed, including package build and doctests.\r\n- `git diff --check` passes.\r\n\r\nMade with Astra on Codex",
+  "url": "https://github.com/mahmoud/boltons/pull/487",
+  "is_pr": true
+}

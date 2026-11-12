@@ -1,0 +1,27 @@
+Fix the following problems in boltons, as described by contributors. Add or update tests for each fix.
+
+### Include subclass instances in get_all searches (boltons#560)
+
+`get_all(Base)` uses only objects that directly reference `Base`, so it misses instances of subclasses even with `include_subtypes=True` (the default). Search GC-tracked objects when subtypes are requested. Retain the direct-reference optimization for exact-type searches and document the performance distinction.
+
+Validation: the base/child/grandchild regression fails on master and passes after the fix; full suite passes with 679 tests and 12 subtests.
+
+### Restore garbage collection state after nested contexts (boltons#559)
+
+Nested uses of `toggle_gc` enable collection as soon as the inner context exits. Entering a context while GC is already disabled also enables collection on exit. Keep a stack of the entry states and restore each state, including exceptional exits.
+
+Validation: 2 new regressions fail on master; full suite passes with 680 tests and 12 subtests.
+
+### Support metaclasses in get_all_subclasses (boltons#505)
+
+Call the built-in subclass descriptor with an explicit class argument so get_all_subclasses(type) and traversal from object do not raise TypeError on metaclasses. Existing traversal order and deduplication remain intact.
+
+Both new regression tests fail before the fix; all 674 tests and module doctests pass on Python 3.11.15 afterward.
+
+### Return None when a trace hook suppresses a method exception (boltons#584)
+
+When a `wrap_trace` hook returns a truthy value for a `raise` event, the original exception is suppressed, but the wrapper then uses an unassigned `ret` and raises `UnboundLocalError`. Set the suppressed call's result to `None`, so return-event delivery and the method return both work. Document that behavior.
+
+Three regressions reproduce the failure before the fix, with default events, raise-only events, and raise/return events. A control verifies that a false-returning hook still propagates the original exception object. The full test suite, including module doctests, passes on CPython 3.12.13: **682 passed and 12 subtests passed**. `git diff --check` passes. Other Python versions were not run.
+
+The full test suite (python -m pytest -q --doctest-modules boltons tests) must stay green.

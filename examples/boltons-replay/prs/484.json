@@ -1,0 +1,7 @@
+{
+  "number": 484,
+  "title": "Preserve empty permission fields in FilePerms.from_int",
+  "body": "`FilePerms.from_int()` drops leading empty permission groups, shifting group/other permissions into a different class:\n\n```python\n>>> perms = FilePerms.from_int(0o007)\n>>> repr(perms)\n\"FilePerms(user='rwx', group='', other='')\"\n>>> oct(int(perms))\n'0o700'\n```\n\nThe same problem affects `from_path()`, which delegates to `from_int()`. Reading a file's mode and passing `int(perms)` back to `os.chmod` can therefore change its permission classes.\n\nRead exactly three groups instead of stopping when the remaining integer becomes zero. The existing lower-nine-bit mask is unchanged. Add roundtrip coverage for all 512 standard modes plus special-bit/file-type/negative inputs to retain existing masking behavior.\n\nValidation on macOS, CPython 3.12.13:\n- Before: 65 of 516 roundtrip cases fail.\n- After: 1,188 tests and doctests pass (`python -m pytest --doctest-modules boltons tests -q`).\n- Real-file `from_path`/`chmod` roundtrips preserve `0o000`, `0o007`, `0o070`, `0o077`, `0o644`, and `0o777`.\n- Toggling original/patched/original code on a real file reproduces `0o007 → 0o700`, preserves `0o007`, and reproduces the failure again.\n\nIndependent of #482 (setter updates) and #483 (rotation). AI assistance was used to prepare the patch and tests; runtime behavior was verified locally. Windows and the Python 3.7 runtime were not tested locally.\n",
+  "url": "https://github.com/mahmoud/boltons/pull/484",
+  "is_pr": true
+}

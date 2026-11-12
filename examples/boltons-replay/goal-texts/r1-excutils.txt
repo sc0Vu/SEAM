@@ -1,0 +1,9 @@
+Fix the following problems in boltons, as described by contributors. Add or update tests for each fix.
+
+### Render wrapped causes when no traceback was captured (boltons#562)
+
+`ExceptionCauseMixin` captures a traceback only while handling its wrapped cause. Wrapping a stored exception outside that handler (or while handling an unrelated error) leaves `full_trace` unset, causing `str(error)` and `get_str()` to raise `AttributeError`. Treat the absent trace as empty and retain the existing cause/message formatting.
+
+Validation: 3 new rendering regressions fail on master and pass with the fix, covering direct wrapping, chained wrapping, and an unrelated active exception. Full suite: 681 tests and 12 subtests pass.
+
+The full test suite (python -m pytest -q --doctest-modules boltons tests) must stay green.

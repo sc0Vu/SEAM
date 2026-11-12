@@ -1,0 +1,66 @@
+Fix the following problems in boltons, as described by contributors. Add or update tests for each fix.
+
+### Keep Stats.mode tie-breaking stable after sorted measures (boltons#534)
+
+`Stats.mode` breaks ties by first appearance, but computing a sorted statistic first can change the answer:
+
+```python
+s = Stats([2, 1, 2, 1])
+s.median  # 1.5
+s.mode    # currently 1; should be 2
+```
+
+With the default `use_copy=True`, lazy sorting reorders `self.data` before `mode` counts it. The fix keeps that data in its original order and caches a separate sorted view. `clear_cache()` discards the view, and `median_abs_dev` reuses it. No-copy and presorted behavior stay unchanged; trimming still replaces the data and clears the caches.
+
+The sorted view retains an additional list of references after first use, without copying the numeric objects. This avoids repeatedly sorting the original data. Callers modifying `stats.data` must call `clear_cache()`, as documented; this now also applies to uncached quantile queries on copied data.
+
+Tests cover call order, cache refresh, trimming, no-copy and presorted inputs, and unhashable numeric values:
+
+- The test file with the new cases on unchanged master: 8 failed, 19 passed.
+- Affected tests and doctests with the fix: 48 passed.
+- Full tests and doctests: 700 passed on both Python 3.12 and 3.14.
+- The repository's `tox -e py314` environment: 700 passed. Other tox environments were not run.
+
+### Invalidate the presorted hint when clearing Stats caches (boltons#570)
+
+`Stats.clear_cache()` now discards the `is_sorted` hint as well as cached measures. Its documented use after modifying `Stats.data` could otherwise recompute incorrect values from an order that no longer holds:
+
+```python
+stats = Stats([1, 2, 3], is_sorted=True)
+stats.data.append(0)
+stats.clear_cache()
+(stats.min, stats.max, stats.median)  # before: (1, 0, 2.5); expected: (0, 3, 1.5)
+```
+
+Reset the hint when clearing the cache, document that behavior, and cover repeated mutations with both copy modes. The `is_sorted=True` optimization remains available until the caller invalidates the cache.
+
+The regression failed on master. After the fix, `python -m pytest --doctest-modules boltons tests -q` passed: 679 tests and 12 subtests on Python 3.12/Linux. Other platforms were not run locally.
+
+Related #534 preserves mode tie-breaking while computing sorted measures. That PR leaves `_is_sorted` set after `clear_cache()` too, so it does not fix this presorted-input mutation case. This change does not alter mode tie-breaking or introduce a sorted-data cache. Open/closed searches for `clear_cache`, `is_sorted`, and Stats cache found no matching fix.
+
+### Fix histogram formatting for zero counts (boltons#529)
+
+`Stats([]).format_histogram()` raises `ZeroDivisionError`, even though histogram counting returns a valid zero-count bin. Passing all-zero counts directly to `format_histogram_counts()` also fails.
+
+Set the bar scale to zero when all counts are zero, retaining the existing `|` marker. For example, `Stats([]).format_histogram(width=20)` now returns `0.0: 0 |`.
+
+The tests cover empty datasets with default and explicit bin counts, single and multiple zero-count bins, and a mixed-count control. Normal histogram output is unchanged.
+
+Validation on Windows with Python 3.12.13:
+
+- Before the fix, the new tests produced 5 division-by-zero failures and 1 passing control.
+- The full test suite, including doctests, passed: 684 tests and 12 subtests.
+- The source distribution and wheel built successfully with `uv build`.
+- After installing the wheel, the full suite passed against the installed package from outside the checkout: 684 tests and 12 subtests.
+- `git diff --check` passed.
+- A separate Codex agent reviewed the diff and found no actionable issues. It did not rerun tests.
+
+Full-suite command:
+
+```bash
+python -B -m pytest -q -p no:cacheprovider --doctest-modules boltons tests
+```
+
+The GitHub Actions matrix has not run. Other Python versions and operating systems have not been tested.
+
+The full test suite (python -m pytest -q --doctest-modules boltons tests) must stay green.

@@ -1,0 +1,7 @@
+{
+  "number": 505,
+  "title": "Support metaclasses in get_all_subclasses",
+  "body": "## The change\n\nCall the built-in subclass descriptor with an explicit class argument so get_all_subclasses(type) and traversal from object do not raise TypeError on metaclasses. Existing traversal order and deduplication remain intact.\n\nBoth new regression tests fail before the fix; all 674 tests and module doctests pass on Python 3.11.15 afterward.\n\n## The backstory\n\nThis follows the utility-library investigation in #502. Subclass discovery through type or object is useful for class registries and introspection. This was found through source inspection and controlled regression tests.\n\n## AI assistance\n\n- Harness/tooling: OpenAI Codex acting on behalf of rupayon123.\n- Model: GPT-6-based Codex; exact backend variant not exposed.\n- Original task excerpt: “Execute my daily GitHub contribution and maintenance workflow on my behalf. Do real, verified work, not only research, a plan, configuration changes, or a status summary.” Required reproducible, tested fixes and no duplicate patches.\n",
+  "url": "https://github.com/mahmoud/boltons/pull/505",
+  "is_pr": true
+}

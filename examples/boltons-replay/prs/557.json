@@ -1,0 +1,7 @@
+{
+  "number": 557,
+  "title": "Include documentation sources in source distributions",
+  "body": "## The change\n\nThe flit sdist configuration names `doc/`, but the documentation lives in `docs/`. Source distributions therefore omit all documentation sources. Include the actual directory and exclude its generated `_build` output.\n\nValidation: built sdists before and after. The original archive contains zero docs files; the corrected archive includes `docs/conf.py`, `docs/index.rst` and the other documentation sources. A temporary file in `docs/_build/` remained excluded. Tests remain included. This is the current flit configuration, separate from the earlier setup.py fix in #353.\n\n## The backstory\n\nEarlier contribution from this account: #555. This discrepancy was found while checking whether the current source distribution contains its documented development files; no separate issue was filed.\n\n## AI assistance\n\n- Harness/tooling: Codex\n- Model(s): GPT-6\n- Original prompt(s): “再改30个10分钟之内可以验证，改正然后提交的issue，提交pr哈。可以多叫几个subagent帮你搞” (Find and fix another 30 issues that can be verified within 10 minutes, and submit PRs; subagents may help.)\n",
+  "url": "https://github.com/mahmoud/boltons/pull/557",
+  "is_pr": true
+}

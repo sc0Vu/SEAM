@@ -1,0 +1,7 @@
+{
+  "number": 562,
+  "title": "Render wrapped causes when no traceback was captured",
+  "body": "## The change\n\n`ExceptionCauseMixin` captures a traceback only while handling its wrapped cause. Wrapping a stored exception outside that handler (or while handling an unrelated error) leaves `full_trace` unset, causing `str(error)` and `get_str()` to raise `AttributeError`. Treat the absent trace as empty and retain the existing cause/message formatting.\n\nValidation: 3 new rendering regressions fail on master and pass with the fix, covering direct wrapping, chained wrapping, and an unrelated active exception. Full suite: 681 tests and 12 subtests pass.\n\n## The backstory\n\nEarlier contribution from this account: #555. Found by constructing a wrapped exception outside an active handler and converting it to a string. Existing PR #422 exercises the non-rendering API; this change addresses the actual rendering failure. No separate issue was filed.\n\n## AI assistance\n\n- Harness/tooling: Codex\n- Model(s): GPT-6\n- Original prompt(s): “再改30个10分钟之内可以验证，改正然后提交的issue，提交pr哈。可以多叫几个subagent帮你搞” (Find and fix another 30 issues that can be verified within 10 minutes, and submit PRs; subagents may help.)\n",
+  "url": "https://github.com/mahmoud/boltons/pull/562",
+  "is_pr": true
+}

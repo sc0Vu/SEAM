@@ -1,0 +1,7 @@
+{
+  "number": 560,
+  "title": "Include subclass instances in get_all searches",
+  "body": "## The change\n\n`get_all(Base)` uses only objects that directly reference `Base`, so it misses instances of subclasses even with `include_subtypes=True` (the default). Search GC-tracked objects when subtypes are requested. Retain the direct-reference optimization for exact-type searches and document the performance distinction.\n\nValidation: the base/child/grandchild regression fails on master and passes after the fix; full suite passes with 679 tests and 12 subtests.\n\n## The backstory\n\nEarlier contribution from this account: #555. Found while checking that the documented subtype option returns instances across an ordinary three-level class hierarchy. No separate issue was filed.\n\n## AI assistance\n\n- Harness/tooling: Codex\n- Model(s): GPT-6\n- Original prompt(s): “再改30个10分钟之内可以验证，改正然后提交的issue，提交pr哈。可以多叫几个subagent帮你搞” (Find and fix another 30 issues that can be verified within 10 minutes, and submit PRs; subagents may help.)\n",
+  "url": "https://github.com/mahmoud/boltons/pull/560",
+  "is_pr": true
+}

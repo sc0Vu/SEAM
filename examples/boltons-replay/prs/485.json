@@ -1,0 +1,7 @@
+{
+  "number": 485,
+  "title": "Fix iter_find_files depth with trailing path separators",
+  "body": "A trailing path separator changes the results of iter_find_files when max_depth is set. With root.txt in a directory and child/child.txt below it, max_depth=0 correctly returns only root.txt for the directory path, but also returns child.txt when the same path ends in a separator. Multiple trailing separators let still deeper files through.\r\n\r\nThe depth calculation subtracts counts of separator-delimited components. Trailing empty components in the initial directory inflate the starting depth. Calculate depth from os.path.relpath(root, directory) instead, so equivalent directory spellings have the same limit.\r\n\r\nThe regression test builds a real three-level temporary tree and checks max_depth=0 and 1 with zero, one, and two trailing separators. It fails before the fix and passes after it.\r\n\r\nValidation on macOS, Python 3.12.13:\r\n- python -m pytest --doctest-modules boltons tests -q: 673 passed.\r\n- git diff --check passed.\r\n",
+  "url": "https://github.com/mahmoud/boltons/pull/485",
+  "is_pr": true
+}

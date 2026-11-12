@@ -1,0 +1,11 @@
+Fix the following problems in boltons, as described by contributors. Add or update tests for each fix.
+
+### Preserve all values in OrderedMultiDict self-extension (boltons#605)
+
+`OrderedMultiDict.update_extend()` appends every value when its source is another multimap, but self-update only appends each key's latest value. Snapshot `items(multi=True)` in the self case so repeated values and their insertion order are preserved without iterating a changing linked list.
+
+For example, self-updating `[('a', 1), ('b', 2), ('a', 3)]` now appends that full sequence, rather than just `[('a', 3), ('b', 2)]`.
+
+The regression fails on the original source. Validation: 681 tests and module doctests pass with `tox -e py314`; 33 dictionary tests also pass in a separate verification run. Python 3.14 reports five deprecation warnings.
+
+The full test suite (python -m pytest -q --doctest-modules boltons tests) must stay green.

@@ -1,0 +1,7 @@
+{
+  "number": 483,
+  "title": "Keep the requested number of rotated file generations",
+  "body": "`rotate_file(path, keep=1)` currently deletes the backup it just created, leaving no copy of the file. For larger values it retains `keep - 1` generations instead of the requested count.\n\nRemove the oldest generation before the descending rename sequence. This lets the new last generation survive. Update the two full-rotation tests to verify all five retained contents (including replacement of a pre-existing fifth backup), and add repeated-rotation tests for `keep=1`, `2`, and `5`, with and without extensions.\n\nFixes #479.\n\nValidation:\n- Before: 8 fileutils scenarios fail; `keep=1` leaves an empty directory.\n- After: 678 tests and doctests pass (`python -m pytest --doctest-modules boltons tests -q`).\n- Actual temporary files preserve the latest backup, replace the oldest on subsequent rotations, and remain unchanged when the source is missing or `keep=0` is rejected.\n- Full suite tested locally on macOS with CPython 3.12.13; focused review tests also passed on Python 3.14. Windows was not tested.\n\nThis branch is independent of #482. AI assistance was used for implementation and tests; before/after filesystem behavior was verified locally.\n",
+  "url": "https://github.com/mahmoud/boltons/pull/483",
+  "is_pr": true
+}

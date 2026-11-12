@@ -1,0 +1,21 @@
+{
+  "repo": "https://github.com/mahmoud/boltons.git",
+  "suite_cmd": "python -m pytest -q --doctest-modules boltons tests",
+  "goals": [
+    {"id": "r1-excutils",   "fix": "2ecf547", "prs": [562],
+     "kind": "single fix"},
+    {"id": "r2-omd-extend", "fix": "8a49b74", "prs": [605],
+     "kind": "single fix (dictutils, with a vendored copy in urlutils)"},
+    {"id": "r3-rotate",     "fix": "1c2db46", "prs": [483],
+     "kind": "single fix"},
+    {"id": "r4-statsutils", "fix": "2873144", "prs": [534, 570, 529],
+     "kind": "several fixes, one module"},
+    {"id": "r5-setutils",   "fix": "40fffc5", "prs": [577, 535, 494, 503, 516, 487],
+     "kind": "several fixes, one module"},
+    {"id": "r6-file-path-named", "fix": "922e7b2",
+     "prs": [484, 518, 485, 539, 504, 573, 557],
+     "kind": "several fixes, three modules (should split)"},
+    {"id": "r7-gc-type-debug", "fix": "f898d8f", "prs": [560, 559, 505, 584],
+     "kind": "several fixes, three modules (should split)"}
+  ]
+}
