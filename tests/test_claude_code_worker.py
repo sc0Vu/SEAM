@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from engine.git import GitRepo
+from engine.git import GitRepo, Identity
 from engine.states import State
 from engine.task import Task, TaskSpec
 from engine.usage import Usage
@@ -14,6 +14,7 @@ from workers import Worker, WorkerFailed
 from workers.claude_code import (
     SCOPE_REQUEST_FILE,
     ClaudeCodeWorker,
+    co_authors_from_result,
     parse_result_json,
     usage_from_result,
 )
@@ -140,3 +141,20 @@ def test_usage_falls_back_to_top_level_usage():
                       "cache_creation_input_tokens": 5, "output_tokens": 6}}
     assert usage_from_result(data) == Usage(3, 4, 5, 6)
     assert usage_from_result({}) == Usage()
+
+
+def test_co_authors_are_every_model_the_run_used(worktree):
+    data = {"modelUsage": {"claude-sonnet-5-5": {}, "claude-haiku-5-5": {},
+                           "bad\nSEAM-Task: 1": {}}}  # untrusted output: dropped
+    expected = (Identity("claude-haiku-5-5", "noreply@anthropic.com"),
+                Identity("claude-sonnet-5-5", "noreply@anthropic.com"))
+    assert co_authors_from_result(data) == expected
+    sb = FakeClaudeSandbox(effect=lambda wd: (wd / "shout.py").write_text("S = 1\n"),
+                           line=result_line(**data))
+    assert ClaudeCodeWorker("w1", "backend", sb).run(task(), worktree).co_authors == expected
+
+
+def test_co_authors_fall_back_to_the_requested_model():
+    assert co_authors_from_result({}, "claude-opus-5-5") == (
+        Identity("claude-opus-5-5", "noreply@anthropic.com"),)
+    assert co_authors_from_result({}) == ()

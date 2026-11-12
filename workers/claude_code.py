@@ -11,7 +11,7 @@ import json
 import shlex
 from pathlib import Path
 
-from engine.git import GitRepo
+from engine.git import GitRepo, Identity
 from engine.task import Task
 from engine.usage import Usage
 from sandbox.base import Sandbox
@@ -82,6 +82,26 @@ def usage_from_result(data: dict) -> Usage:
     u = data.get("usage") or {}
     return Usage(int(u.get("input_tokens") or 0), int(u.get("cache_read_input_tokens") or 0),
                  int(u.get("cache_creation_input_tokens") or 0), int(u.get("output_tokens") or 0))
+
+
+# Anthropic's noreply address, as Claude Code itself uses in Co-Authored-By trailers.
+MODEL_EMAIL = "noreply@anthropic.com"
+
+
+def co_authors_from_result(data: dict, fallback_model: str | None = None) -> tuple[Identity, ...]:
+    """Every model a Claude Code run used (`modelUsage` keys), as git identities named
+    by model id. The output is untrusted: a key that is not a valid identity name is
+    dropped. Falls back to the model the run was started with."""
+    per_model = data.get("modelUsage")
+    names = sorted(per_model) if isinstance(per_model, dict) and per_model else (
+        [fallback_model] if fallback_model else [])
+    out = []
+    for name in names:
+        try:
+            out.append(Identity(str(name), MODEL_EMAIL))
+        except ValueError:
+            continue
+    return tuple(out)
 
 
 class ClaudeCodeWorker:
@@ -157,4 +177,5 @@ class ClaudeCodeWorker:
         diff = GitRepo(worktree).stage_all()
         if not diff:
             raise WorkerFailed("claude run changed nothing", cost, usage)
-        return WorkerResult(diff=diff, cost_usd=cost, usage=usage)
+        return WorkerResult(diff=diff, cost_usd=cost, usage=usage,
+                            co_authors=co_authors_from_result(data, self.model))

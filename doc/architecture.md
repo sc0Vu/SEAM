@@ -239,11 +239,21 @@ pending_scope[]  (globs of a denied scope request, kept while the task is `block
                   so it is retried even after a restart; cleared when granted)
 ```
 
-**Commit identity.** SEAM makes every commit (agents never run git), all under one
-identity, `SEAM merge engine`. Who did what is in the message trailers: task commits
-carry `SEAM-Task`, `SEAM-Worker` and `SEAM-Attempt`; merge commits carry `SEAM-Task`
-and `SEAM-Worker` (the task's author). Separate them with
-`git log --grep 'SEAM-Worker: backend-2'`.
+**Commit identity.** SEAM makes every commit (agents never run git), so the
+**committer** is always `SEAM merge engine <seam@localhost>`. The **author** is the
+operator who launched the run (`run --author`, else the target repo's git
+`user.name`/`user.email`; SEAM itself if neither is set): a person is accountable
+for what a run merges, and a model can neither sign off nor hold copyright. Who did
+the work is in the message trailers: task commits carry `SEAM-Task`, `SEAM-Worker`,
+`SEAM-Attempt`, and one `Co-Authored-By: <model id> <vendor noreply>` per model the
+run used. The worker adapter names those models (`WorkerResult.co_authors`) because
+only it knows its runtime's vendor (invariant 8); they come from the agent's own
+output, so `Identity` refuses any name or email containing `<`, `>` or a newline and
+the adapter drops such entries — a trailer cannot be forged. Merge commits carry
+`SEAM-Task` and `SEAM-Worker` (the task's owner). Separate workers with
+`git log --grep 'SEAM-Worker: backend-2'`. SEAM has no GitHub account of its own: it
+runs under each operator's identity and pushes nothing in v1; a GitHub App (`[bot]`
+identity) is the fit once it pushes or opens PRs.
 
 **Run accounting** (`runs` table, `engine/usage.py`): one row per agent run against a
 task: `role` (worker | reviewer | gate — a review the deterministic checks decided,

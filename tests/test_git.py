@@ -1,7 +1,7 @@
 import pytest
 
 from engine.errors import GitError
-from engine.git import GitRepo
+from engine.git import SEAM_IDENTITY, GitRepo, Identity
 from tests.gitfixture import branch_with, commit_files, git, make_repo
 
 
@@ -110,3 +110,65 @@ def test_stage_all_skips_interpreter_byproducts(repo, tmp_path):
     w.stage_all()
     w.commit_staged("task 1")
     assert g.changed_files("main", "seam/task-1") == ["pkg/c.py"]
+
+
+OPERATOR = Identity("Ada Operator", "ada@example.com")
+
+
+def who(repo, ref):
+    return git(repo, "log", "-1", "--format=%an <%ae>|%cn <%ce>", ref).split("|")
+
+
+def test_commits_are_authored_by_the_operator_and_committed_by_seam(repo, tmp_path):
+    g = GitRepo(repo, author=OPERATOR)
+    g.add_worktree(tmp_path / "wt", "seam/task-1", "main")
+    w = GitRepo(tmp_path / "wt", author=OPERATOR)
+    (tmp_path / "wt" / "c.py").write_text("C = 1\n")
+    w.stage_all()
+    task = w.commit_staged("task 1")
+    merge = g.commit_tree(g.merge_tree(g.rev_parse("main"), task).tree,
+                          [g.rev_parse("main"), task], "merge task 1")
+    for sha in (task, merge):
+        assert who(repo, sha) == ["Ada Operator <ada@example.com>",
+                                  "SEAM merge engine <seam@localhost>"]
+
+
+def test_without_an_operator_seam_is_author_and_committer(repo):
+    g = GitRepo(repo)
+    sha = g.commit_tree(git(repo, "rev-parse", "main^{tree}"), [g.rev_parse("main")], "m")
+    assert who(repo, sha) == [str(SEAM_IDENTITY)] * 2
+
+
+def test_configured_identity_reads_git_config(repo, monkeypatch):
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    g = GitRepo(repo)
+    assert g.configured_identity() is None
+    git(repo, "config", "user.name", "Ada Operator")
+    assert g.configured_identity() is None  # name without email is not an identity
+    git(repo, "config", "user.email", "ada@example.com")
+    assert g.configured_identity() == OPERATOR
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("Ada Operator <ada@example.com>", OPERATOR),
+    ("  claude-opus-5-5   <noreply@anthropic.com> ",
+     Identity("claude-opus-5-5", "noreply@anthropic.com")),
+])
+def test_identity_parses_name_and_email(text, expected):
+    assert Identity.parse(text) == expected
+
+
+@pytest.mark.parametrize("name, email", [
+    ("Ada", "ada@example.com>\nCo-Authored-By: x <y@z"),  # trailer injection
+    ("Ada\nSEAM-Task: 9", "ada@example.com"),
+    ("", "ada@example.com"),
+    ("Ada", ""),
+    ("Ada <x>", "ada@example.com"),
+    ("Ada\rX", "ada@example.com"),
+])
+def test_identity_rejects_anything_that_could_forge_a_header(name, email):
+    with pytest.raises(ValueError):
+        Identity(name, email)
+    with pytest.raises(ValueError):
+        Identity.parse(f"{name} <{email}>")

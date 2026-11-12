@@ -146,6 +146,7 @@ All take `--state-dir` (default `./.seam`). Useful `run` options:
 | `--suite-cmd` | `python -m pytest -q` | the FULL suite run on every merged tree |
 | `--model`, `--reviewer-model` | Claude Code's default | models for workers / reviewer |
 | `--review-context` | `whole` | `focused` sends large files as an outline plus the code the diff touches (cheaper, less tested) |
+| `--author` | the repo's git `user.name <user.email>` | who the run's commits are authored by |
 | `--review-probes` | off | the reviewer also writes adversarial pytest probes; any failure rejects (see Results) |
 
 A plan is JSON: a `goal` and `tasks`, each with `key`, `type`, `description`,
@@ -158,8 +159,10 @@ API-equivalent cost and count against your plan's usage limits; with an API key 
 are billed. Measured so far: greeter case 1 ≈ $0.05, boltons goals $0.67–$1.35
 (see Results). `run` prints cost and tokens by role; `inspect` per run.
 
-**Commits.** Everything SEAM commits uses one identity (`SEAM merge engine`); which
-worker wrote what is in the trailers: `git log --grep 'SEAM-Worker: backend-2'`.
+**Commits.** You are the author of what your run merges (`--author`, else your git
+`user.name`/`user.email`; `SEAM merge engine` if neither is set), and SEAM is the
+committer. Each task commit credits the models that wrote it with `Co-Authored-By`,
+and the trailers say which worker ran them: `git log --grep 'SEAM-Worker: backend-2'`.
 
 ## Use it from Claude Code or Claude Desktop (MCP)
 

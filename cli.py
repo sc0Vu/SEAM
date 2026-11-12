@@ -18,7 +18,7 @@ from pathlib import Path
 from coordinator import escalation
 from coordinator.lead import Budget, Lead, goal_budget, load_plan
 from engine.errors import SeamError
-from engine.git import GitRepo
+from engine.git import GitRepo, Identity
 from engine.merge import MergeEngine
 from engine.orchestrator import Orchestrator
 from engine.scope import scopes_overlap
@@ -176,6 +176,11 @@ def cmd_plan(args: argparse.Namespace) -> None:
     print(f"review it, then: cli.py run --repo {args.repo} --plan {out} ...")
 
 
+def identity(text: str) -> Identity:
+    """argparse type for `Name <email>`."""
+    return Identity.parse(text)
+
+
 def cmd_run(args: argparse.Namespace) -> None:
     """Run a team. Holds the state dir's writer lock throughout, so no other command
     changes task state while agents work (the single-writer condition for sqlite)."""
@@ -183,8 +188,18 @@ def cmd_run(args: argparse.Namespace) -> None:
         _run(args)
 
 
+def run_author(args: argparse.Namespace, repo: GitRepo) -> Identity | None:
+    """Who the run's commits are authored by: `--author`, else the repo's configured
+    git user, else None (SEAM authors them). The operator who launched the run is
+    accountable for what it merges; SEAM is the committer either way (doc §4)."""
+    return args.author or repo.configured_identity()
+
+
 def _run(args: argparse.Namespace) -> None:
     repo = GitRepo(args.repo)
+    repo.author = run_author(args, repo)
+    print(f"commits authored by {repo.author or 'SEAM (no git user configured)'}, "
+          "committed by SEAM")
     tests = DockerSandbox(args.image, user=host_user())
     credential = preflight(args, repo, tests)
     store = _store(args.state_dir)
@@ -389,6 +404,9 @@ def parser() -> argparse.ArgumentParser:
     r.add_argument("--image", default=DEFAULT_IMAGE)
     r.add_argument("--model")
     r.add_argument("--reviewer-model")
+    r.add_argument("--author", type=identity, metavar="'NAME <EMAIL>'",
+                   help="author of the commits this run makes (default: the repo's git "
+                        "user.name/user.email); SEAM is always the committer")
     r.add_argument("--review-context", choices=["whole", "focused"], default="whole",
                    help="original files for the reviewer: whole, or focused on what the "
                         "diff touches (cheaper; less tested, see doc §8)")

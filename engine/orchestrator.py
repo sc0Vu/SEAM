@@ -193,14 +193,17 @@ class Orchestrator:
             self.lead.decide_scope(task_id, list(result.scope_request))
             return
         task = self.store.get(task_id)
-        wt = GitRepo(task.worktree_path or "")
+        wt = GitRepo(task.worktree_path or "", author=self.repo.author)
         if not wt.stage_all():
             self.store.transition(task_id, Event.FAIL, review_notes="worker run changed nothing")
             return
-        # One git identity for everything SEAM commits; who wrote what is in the trailers.
+        # Author: the operator; committer: SEAM; the models that wrote it and the
+        # SEAM worker that ran them are in the trailers (doc §4, commit identity).
+        credits = "".join(f"\nCo-Authored-By: {who}" for who in result.co_authors)
         wt.commit_staged(
             f"task {task_id}: {task.spec.description}\n\n"
-            f"SEAM-Task: {task_id}\nSEAM-Worker: {worker_id}\nSEAM-Attempt: {task.attempts + 1}")
+            f"SEAM-Task: {task_id}\nSEAM-Worker: {worker_id}\nSEAM-Attempt: {task.attempts + 1}"
+            + credits)
         diff = self.repo.diff(self.target, task.branch or "")
         self.store.transition(task_id, Event.SUBMIT, diff=diff)
 

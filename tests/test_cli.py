@@ -183,3 +183,23 @@ def test_rereview_from_the_cli_only_after_an_environment_failure(tmp_path, capsy
     _escalated_store(state)  # escalated by review rejections, not the environment
     assert cli.main(["rereview", "--state-dir", state, "--task", "1"]) == 1
     assert "nothing to re-review" in capsys.readouterr().err
+
+
+def test_run_author_prefers_the_flag_then_git_config(tmp_path, monkeypatch):
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    repo = cli.GitRepo(make_repo(tmp_path, {"a.py": ""}))
+    args = cli.parser().parse_args(
+        ["run", "--repo", str(repo.path), "--author", "Ada <ada@example.com>"])
+    assert str(cli.run_author(args, repo)) == "Ada <ada@example.com>"
+    args.author = None
+    assert cli.run_author(args, repo) is None  # SEAM authors when nobody is configured
+    git(repo.path, "config", "user.name", "Bo")
+    git(repo.path, "config", "user.email", "bo@example.com")
+    assert str(cli.run_author(args, repo)) == "Bo <bo@example.com>"
+
+
+def test_run_rejects_a_malformed_author(capsys):
+    with pytest.raises(SystemExit):
+        cli.parser().parse_args(["run", "--repo", ".", "--author", "no email"])
+    assert "author" in capsys.readouterr().err

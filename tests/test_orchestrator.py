@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from coordinator.lead import Budget, Lead
-from engine.git import GitRepo
+from engine.git import GitRepo, Identity
 from engine.merge import MergeEngine
 from engine.orchestrator import Orchestrator
 from engine.states import Event, State
@@ -32,9 +32,9 @@ LIB = "def greet():\n    return 'hi'\n"
 class ScriptedWorker:
     """Runs `scripts[task.description](task, worktree, run_no)` -> files or globs."""
 
-    def __init__(self, id, scripts, type="backend", cost=0.0, barrier=None):
+    def __init__(self, id, scripts, type="backend", cost=0.0, barrier=None, co_authors=()):
         self.id, self.type, self.scripts, self.cost = id, type, scripts, cost
-        self.barrier = barrier
+        self.barrier, self.co_authors = barrier, co_authors
         self.runs: list[tuple[int, str]] = []
 
     def run(self, task, worktree: Path) -> WorkerResult:
@@ -47,7 +47,8 @@ class ScriptedWorker:
         for name, text in out.items():
             (worktree / name).parent.mkdir(parents=True, exist_ok=True)
             (worktree / name).write_text(text)
-        return WorkerResult(diff="(see worktree)", cost_usd=self.cost)
+        return WorkerResult(diff="(see worktree)", cost_usd=self.cost,
+                            co_authors=self.co_authors)
 
 
 class ScriptedReviewer:
@@ -66,11 +67,11 @@ def writes(files):
     return lambda task, wt, n: files
 
 
-def build(tmp_path, workers, reviewer=None, budget=100.0):
+def build(tmp_path, workers, reviewer=None, budget=100.0, author=None):
     repo = make_repo(tmp_path, {"lib.py": LIB, "app.py": "from lib import greet\n"})
     store = TaskStore(tmp_path / "seam.sqlite")
     sandbox = ImportCheckSandbox()
-    g = GitRepo(repo)
+    g = GitRepo(repo, author=author)
     lead = Lead(store, "g", Budget(budget))
     gate = ReviewGate(g, sandbox, reviewer or ScriptedReviewer(), scratch=tmp_path)
     merger = MergeEngine(store, g, sandbox, suite_cmd="pytest", scratch=tmp_path)
@@ -401,3 +402,18 @@ def test_untestable_task_escalates_once_then_rereview_merges_it(tmp_path):
     orch.run()
     assert store.get(t.id).state is State.MERGED
     assert len(w.runs) == 1  # the same branch, never reworked
+
+
+def test_operator_authors_seam_commits_and_models_are_credited(tmp_path):
+    operator = Identity("Ada Operator", "ada@example.com")
+    model = Identity("claude-opus-5-5", "noreply@anthropic.com")
+    w = ScriptedWorker("w1", {"count": writes({"count.py": "N = 1\n"})}, co_authors=(model,))
+    repo, store, _, orch = build(tmp_path, [w], author=operator)
+    t = add(store, "count", ["count.py"])
+
+    assert orch.run().ids_in(State.MERGED) == [t.id]
+    fmt = "--format=%an <%ae>|%cn <%ce>|%(trailers:key=Co-Authored-By,valueonly,separator=;)"
+    seam = "SEAM merge engine <seam@localhost>"
+    # The merge commit and, as its second parent, the worker's task commit.
+    assert git(repo, "log", "-1", fmt, "main").split("|") == [str(operator), seam, ""]
+    assert git(repo, "log", "-1", fmt, "main^2").split("|") == [str(operator), seam, str(model)]

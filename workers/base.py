@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+from engine.git import Identity
 from engine.task import Task
 from engine.usage import Usage
 
@@ -23,12 +24,17 @@ class WorkerResult:
       It is untrusted data until review and merge (invariant 10).
     - `scope_request`: globs outside the task's file_scope the worker needs. The
       worker STOPS instead of editing them (invariant 3); the lead decides.
+
+    `co_authors` names the models that wrote the change, as the runtime reports them;
+    the engine credits each in a `Co-Authored-By` trailer on the task commit. The
+    adapter forms them because only it knows its vendor's identities (invariant 8).
     """
 
     diff: str = ""
     scope_request: tuple[str, ...] = ()
     cost_usd: float = 0.0  # what the run spent; the lead charges it to the budget
     usage: Usage | None = None  # tokens, when the runtime reports them
+    co_authors: tuple[Identity, ...] = ()
 
     def __post_init__(self) -> None:
         if bool(self.diff) == bool(self.scope_request):
