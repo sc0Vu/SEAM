@@ -1,0 +1,13 @@
+{
+  "goal": "r7-gc-type-debug",
+  "fix": "f898d8f",
+  "files": [
+    "tests/test_debugutils_trace.py",
+    "tests/test_gcutils.py",
+    "tests/test_typeutils.py"
+  ],
+  "target": 4,
+  "target_passed": 4,
+  "target_failed": [],
+  "regressions": []
+}

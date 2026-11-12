@@ -1,0 +1,19 @@
+{
+  "goal": "excutils-missing-full-trace",
+  "goal_text": "Fix the following problems in boltons, as described by contributors. Add or update tests for each fix.\n\n### Render wrapped causes when no traceback was captured (boltons#562)\n\n`ExceptionCauseMixin` captures a traceback only while handling its wrapped cause. Wrapping a stored exception outside that handler (or while handling an unrelated error) leaves `full_trace` unset, causing `str(error)` and `get_str()` to raise `AttributeError`. Treat the absent trace as empty and retain the existing cause/message formatting.\n\nValidation: 3 new rendering regressions fail on master and pass with the fix, covering direct wrapping, chained wrapping, and an unrelated active exception. Full suite: 681 tests and 12 subtests pass.\n\nThe full test suite (python -m pytest -q --doctest-modules boltons tests) must stay green.",
+  "planner_notes": "Single indivisible fix: ExceptionCauseMixin only sets full_trace in some branches of __new__; _get_trace_str reads self.full_trace unconditionally. Plan one task covering the module and a new test file. No existing tests reference ExceptionCauseMixin, so tests/test_excutils.py is new. Risk: __new__ copies full_trace via getattr(cause,'full_trace',None), so a class-level None default keeps chained wrapping behavior unchanged.",
+  "tasks": [
+    {
+      "key": "fix_missing_full_trace",
+      "type": "backend",
+      "description": "In boltons/excutils.py, make ExceptionCauseMixin tolerate a missing traceback. Simplest approach: add class attribute `full_trace = None` next to `cause = None`, and in _get_trace_str use `getattr(self, 'full_trace', None)` so an absent trace is treated as empty. Do not change __new__ semantics otherwise. Add new file tests/test_excutils.py with 3 regression tests (define `class MyExc(ExceptionCauseMixin): pass`): (1) direct wrapping: create `cause = ValueError('boom')` outside any except block, `err = MyExc(cause, 'msg')`; str(err) and err.get_str() must not raise; str(err) == \"msg (caused by ValueError('boom'))\" style output as produced by _format_exc (check actual output and assert it contains 'msg', 'caused by', and 'boom', with no 'Traceback'). Also test without message: str contains 'caused by'. (2) chained wrapping: wrap err in another MyExc(err, 'outer') outside a handler; str and get_str work, root_cause is the original cause. (3) unrelated active exception: inside `try: raise KeyError('x') except KeyError:` wrap the stored ValueError cause; str/get_str don't raise and no traceback is rendered. Also keep existing behavior: wrapping inside the except handler of the cause still yields a 'Wrapped traceback' string.",
+      "spec_ref": "ExceptionCauseMixin(cause_exc, *args): when no traceback was captured (cause wrapped outside its handler, or while an unrelated exception is active), self.full_trace is None/absent and is treated as empty. __str__ then returns self._get_exc_str(incl_name=False) (message + ' (caused by <root cause>)' or ' caused by <root cause>'); get_str() returns just '<ClassName>: ...' with no 'Traceback (most recent call last):' header. No AttributeError. Behavior when a trace is captured is unchanged.",
+      "file_scope": [
+        "boltons/excutils.py",
+        "tests/test_excutils.py"
+      ],
+      "blocked_by": [],
+      "test_cmd": "python -m pytest -q --doctest-modules boltons/excutils.py tests/test_excutils.py"
+    }
+  ]
+}

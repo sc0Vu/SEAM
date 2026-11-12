@@ -1,0 +1,43 @@
+{
+  "goal": "boltons-gc-typeutils-trace-fixes",
+  "goal_text": "Fix the following problems in boltons, as described by contributors. Add or update tests for each fix.\n\n### Include subclass instances in get_all searches (boltons#560)\n\n`get_all(Base)` uses only objects that directly reference `Base`, so it misses instances of subclasses even with `include_subtypes=True` (the default). Search GC-tracked objects when subtypes are requested. Retain the direct-reference optimization for exact-type searches and document the performance distinction.\n\nValidation: the base/child/grandchild regression fails on master and passes after the fix; full suite passes with 679 tests and 12 subtests.\n\n### Restore garbage collection state after nested contexts (boltons#559)\n\nNested uses of `toggle_gc` enable collection as soon as the inner context exits. Entering a context while GC is already disabled also enables collection on exit. Keep a stack of the entry states and restore each state, including exceptional exits.\n\nValidation: 2 new regressions fail on master; full suite passes with 680 tests and 12 subtests.\n\n### Support metaclasses in get_all_subclasses (boltons#505)\n\nCall the built-in subclass descriptor with an explicit class argument so get_all_subclasses(type) and traversal from object do not raise TypeError on metaclasses. Existing traversal order and deduplication remain intact.\n\nBoth new regression tests fail before the fix; all 674 tests and module doctests pass on Python 3.11.15 afterward.\n\n### Return None when a trace hook suppresses a method exception (boltons#584)\n\nWhen a `wrap_trace` hook returns a truthy value for a `raise` event, the original exception is suppressed, but the wrapper then uses an unassigned `ret` and raises `UnboundLocalError`. Set the suppressed call's result to `None`, so return-event delivery and the method return both work. Document that behavior.\n\nThree regressions reproduce the failure before the fix, with default events, raise-only events, and raise/return events. A control verifies that a false-returning hook still propagates the original exception object. The full test suite, including module doctests, passes on CPython 3.12.13: **682 passed and 12 subtests passed**. `git diff --check` passes. Other Python versions were not run.\n\nThe full test suite (python -m pytest -q --doctest-modules boltons tests) must stay green.",
+  "planner_notes": "Three independent tasks. #560 (get_all) and #559 (toggle_gc) both live in boltons/gcutils.py and tests/test_gcutils.py, so I merged them into one task to avoid overlapping scopes. typeutils and debugutils tasks have disjoint scopes and run in parallel with it. Risk: get_all_subclasses in typeutils may be imported by other modules; the change must keep traversal order and dedup. No CHANGELOG edits are in scope, to avoid cross-task overlap.",
+  "tasks": [
+    {
+      "key": "gcutils_fixes",
+      "type": "backend",
+      "description": "In boltons/gcutils.py fix two bugs and add regression tests in tests/test_gcutils.py. (1) boltons#560: get_all(type_obj, include_subtypes=True) currently only uses gc.get_referrers(type_obj), so instances of subclasses (child, grandchild) are missed. When include_subtypes is True, search all GC-tracked objects (gc.get_objects()) and return instances via isinstance; keep the gc.get_referrers direct-reference optimization for exact-type searches (include_subtypes=False), and document the performance distinction in the docstring. Add a base/child/grandchild regression test that fails on the old code. (2) boltons#559: toggle_gc nested contexts re-enable GC when the inner context exits, and entering while GC is already disabled enables it on exit. Keep a stack of the gc.isenabled() state at each entry (push on enter) and on exit pop and restore that state (gc.enable() if it was enabled, else gc.disable()), including exceptional exits. Add 2 regression tests (nested contexts; entering while already disabled; restore on exception ok too). Make sure GC state is restored in tests' finally blocks. Do not change other files.",
+      "spec_ref": "get_all(type_obj, include_subtypes=True) -> list: include_subtypes=True returns all gc-tracked objects that are isinstance of type_obj (includes subclass instances, grandchildren); include_subtypes=False returns only exact-type instances, using the gc.get_referrers(type_obj) fast path, with the previous behavior. toggle_gc context manager: on enter record gc.isenabled() on a stack and disable GC; on exit (normal or exception, exception propagates) pop and restore the recorded state. Nested toggle_gc inner exit must leave GC disabled; entering with GC already disabled must leave it disabled after exit. Existing toggle_gc_postcollect behavior unchanged. Full suite: python -m pytest -q --doctest-modules boltons tests",
+      "file_scope": [
+        "boltons/gcutils.py",
+        "tests/test_gcutils.py"
+      ],
+      "blocked_by": [],
+      "test_cmd": "python -m pytest -q --doctest-modules boltons/gcutils.py tests/test_gcutils.py"
+    },
+    {
+      "key": "typeutils_metaclass",
+      "type": "backend",
+      "description": "boltons#505: in boltons/typeutils.py get_all_subclasses(cls) raises TypeError for metaclasses (e.g. get_all_subclasses(type), or traversal reaching type from object) because it calls the unbound cls.__subclasses__() which resolves to the type.__subclasses__ descriptor requiring an argument. Fix by calling the built-in descriptor with an explicit class argument (e.g. type.__subclasses__(cls)) wherever subclasses are fetched. Preserve traversal order and deduplication. Add two regression tests in the existing typeutils test file (tests/test_typeutils.py; create if absent) covering get_all_subclasses(type) and get_all_subclasses(object) not raising and including expected classes such as a custom metaclass subclassing type.",
+      "spec_ref": "get_all_subclasses(cls) -> list of all direct and indirect subclasses, in the existing traversal order, deduplicated; must work for cls being a metaclass (type) or object without TypeError. Doctests in boltons/typeutils.py must still pass.",
+      "file_scope": [
+        "boltons/typeutils.py",
+        "tests/test_typeutils.py"
+      ],
+      "blocked_by": [],
+      "test_cmd": "python -m pytest -q --doctest-modules boltons/typeutils.py tests/test_typeutils.py"
+    },
+    {
+      "key": "debugutils_trace_suppress",
+      "type": "backend",
+      "description": "boltons#584: in boltons/debugutils.py wrap_trace, when the hook returns a truthy value for a 'raise' event, the original exception is suppressed but the wrapper then reads an unassigned local `ret` and raises UnboundLocalError. Set the suppressed call's result to None so that the 'return' event (if enabled) is delivered with None and the wrapped method returns None. Document this behavior in the wrap_trace docstring. Add tests in tests/test_debugutils_trace.py: three regressions (default events; events=('raise',) only; events=('raise','return')) verifying None is returned, and a control showing a falsy-returning hook still propagates the original exception object.",
+      "spec_ref": "wrap_trace(obj, hook=trace_print_hook, which=None, events=None, label=None): for a wrapped method that raises, the hook is called with event 'raise'; if hook returns truthy the exception is suppressed and the method returns None (the 'return' event hook is then called with result None if 'return' is among the events); if hook returns falsy the original exception propagates unchanged. Full suite: python -m pytest -q --doctest-modules boltons tests",
+      "file_scope": [
+        "boltons/debugutils.py",
+        "tests/test_debugutils_trace.py"
+      ],
+      "blocked_by": [],
+      "test_cmd": "python -m pytest -q --doctest-modules boltons/debugutils.py tests/test_debugutils_trace.py"
+    }
+  ]
+}

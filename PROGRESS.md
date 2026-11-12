@@ -94,6 +94,7 @@ Last updated: 2026-11-12. State: released **seam-merge 0.1.0** on PyPI (tag v0.1
 | LLM planner on the bench-2 goal | sound 2-task plan, found the coupling unaided | $0.07 |
 | that plan, run unedited | 2/2 merged, 0 escalated, 782 tests green — **but 2 real bugs shipped** | $0.47 |
 | LLM planner on the bench-1 goal, run unedited (bench4) | same 8-task plan; 8/8 merged, 806 green; probes: 1 inherited defect | $1.44 |
+| replay: 7 merged boltons fixes (goals from contributor PRs, maintainers' hidden tests) | 15 tasks: 14 merged, 1 false escalation; 27/27 hidden target tests where merged; 1 silent API break from a wrong planner contract | $2.91 |
 | greeter case 2, driven entirely over MCP (2026-11-12) | farewell merged; rename escalated as a semantic conflict, main never broke; cancelled over MCP | $0.12 |
 
 ## Key findings
@@ -105,7 +106,12 @@ Last updated: 2026-11-12. State: released **seam-merge 0.1.0** on PyPI (tag v0.1
   correct ones**: the probes asserted pre-existing quirks of the original code.
 - **Escalation rate alone is misleading**: a run can merge everything and still ship
   defects. A silent-defect check is needed alongside merged / needs_human.
-- No real-code task has escalated yet (0 of 23).
+- First real-code escalation (replay r1), and it was false: the branch was correct.
+- Replay (independent goals): the planner decomposes well; its *contract* is the weak
+  point. r3's planner invented "missing source raises", the reviewer enforced it, the
+  worker rewrote an existing test to match, and an API break merged. r1's planner
+  added an unrequested test that led to a 3-rejection loop; the worker had no way to
+  propose the side bug as a separate task.
 - boltons' `qp` alias discards in-place `query_params` edits when read; all three URL
   features (bench-1, 3, 4) fell into it, and no review caught it. It accounts for one
   of bench-3's two "real bugs" too (root cause predates SEAM).
@@ -123,6 +129,10 @@ Last updated: 2026-11-12. State: released **seam-merge 0.1.0** on PyPI (tag v0.1
 - `gh` CLI login has expired (`gh auth login`), so CI logs can't be read from here.
 
 ## Next
+0. From the replay: (a) flag diffs that change a pre-existing test's assertions
+   unless the task explicitly authorizes a behavior change; (b) check a plan's
+   "existing behavior" claims against the code; (c) a worker -> lead channel to
+   propose a separate task instead of looping to escalation.
 1. Probe adjudication — deferred by owner (2026-11-11).
 2. Planner measurements on goals NOT written by the author (the real test), with a
    silent-defect check; and a goal whose tasks genuinely conflict.
@@ -131,7 +141,7 @@ Last updated: 2026-11-12. State: released **seam-merge 0.1.0** on PyPI (tag v0.1
    args, state dir, repo files or git objects.
 
 ## Spend
-2026-11-12: $0.12 (greeter case 2 over MCP).
+2026-11-12: $0.12 (greeter case 2 over MCP) + $2.91 (replay benchmark, 7 goals).
 2026-11-11: $1.44 (bench4 planning $0.08 + run $1.36).
 Before: ≈ $6 API-equivalent so far (subscription usage): $2.72 in run records (bench1 $0.67,
 bench2 $1.35, bench3 $0.47, token-measurement runs $0.24), plus ≈ $0.80 of greeter runs

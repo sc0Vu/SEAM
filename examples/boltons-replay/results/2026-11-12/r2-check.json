@@ -1,0 +1,11 @@
+{
+  "goal": "r2-omd-extend",
+  "fix": "8a49b74",
+  "files": [
+    "tests/test_dictutils.py"
+  ],
+  "target": 2,
+  "target_passed": 2,
+  "target_failed": [],
+  "regressions": []
+}

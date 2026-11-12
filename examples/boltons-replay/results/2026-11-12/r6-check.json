@@ -1,0 +1,13 @@
+{
+  "goal": "r6-file-path-named",
+  "fix": "922e7b2",
+  "files": [
+    "tests/test_fileutils.py",
+    "tests/test_namedutils.py",
+    "tests/test_pathutils.py"
+  ],
+  "target": 7,
+  "target_passed": 7,
+  "target_failed": [],
+  "regressions": []
+}

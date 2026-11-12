@@ -1,0 +1,13 @@
+{
+  "goal": "r3-rotate",
+  "fix": "1c2db46",
+  "files": [
+    "tests/test_fileutils.py"
+  ],
+  "target": 3,
+  "target_passed": 3,
+  "target_failed": [],
+  "regressions": [
+    "tests.test_fileutils::test_rotate_file_no_rotation"
+  ]
+}

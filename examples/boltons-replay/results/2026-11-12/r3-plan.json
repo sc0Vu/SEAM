@@ -1,0 +1,20 @@
+{
+  "goal": "rotate-file-keep-generations",
+  "goal_text": "Fix the following problems in boltons, as described by contributors. Add or update tests for each fix.\n\n### Keep the requested number of rotated file generations (boltons#483)\n\n`rotate_file(path, keep=1)` currently deletes the backup it just created, leaving no copy of the file. For larger values it retains `keep - 1` generations instead of the requested count.\n\nRemove the oldest generation before the descending rename sequence. This lets the new last generation survive. Update the two full-rotation tests to verify all five retained contents (including replacement of a pre-existing fifth backup), and add repeated-rotation tests for `keep=1`, `2`, and `5`, with and without extensions.\n\nFixes #479.\n\nValidation:\n- Before: 8 fileutils scenarios fail; `keep=1` leaves an empty directory.\n- After: 678 tests and doctests pass (`python -m pytest --doctest-modules boltons tests -q`).\n- Actual temporary files preserve the latest backup, replace the oldest on subsequent rotations, and remain unchanged when the source is missing or `keep=0` is rejected.\n- Full suite tested locally on macOS with CPython 3.12.13; focused review tests also passed on Python 3.14. Windows was not tested.\n\nThis branch is independent of #482. AI assistance was used for implementation and tests; before/after filesystem behavior was verified locally.\n\nThe full test suite (python -m pytest -q --doctest-modules boltons tests) must stay green.",
+  "planner_notes": "Single indivisible fix: the code change in boltons/fileutils.py and its tests in tests/test_fileutils.py are tightly coupled, so one task. No overlapping scopes. Risk: rotate_file is only used in fileutils.py, the docs and the tests, so no other modules import it.",
+  "tasks": [
+    {
+      "key": "fix_rotate_keep",
+      "type": "backend",
+      "description": "Fix boltons.fileutils.rotate_file (around line 697 of boltons/fileutils.py) so it keeps exactly `keep` generations. Currently keep=1 deletes the backup it just created, and larger values keep keep-1 generations. Fix: before the descending rename sequence, remove the oldest generation (the file at index `keep`, e.g. name.N with the extension handling the existing code uses) if it exists, so the rename chain can move every generation up and the new last generation survives. Preserve existing behavior: ValueError for keep < 1, error when the source is not a file or is missing (source unchanged), and the extension-aware naming (e.g. foo.1.txt vs foo.txt.1, whichever the existing code does). Update the docstring if it is inaccurate. Tests in tests/test_fileutils.py: update the two existing full-rotation tests to assert the contents of all five retained backups, including replacement of a pre-existing fifth backup. Add repeated-rotation tests for keep=1, 2 and 5, each with and without a file extension, checking that the latest backup is preserved and the oldest is replaced on later rotations. Also keep tests for missing source and keep=0 raising ValueError with files unchanged. Optionally add a CHANGELOG.md note. The full suite `python -m pytest -q --doctest-modules boltons tests` must pass.",
+      "spec_ref": "rotate_file(filename, *, keep: int = 5): keep >= 1 else ValueError('expected \"keep\" to be >=1, not {keep}'). After each call the original file is moved to the first backup slot and up to `keep` backup generations exist, with the oldest dropped only when there are more than `keep`. keep=1 leaves exactly one backup holding the latest content. A pre-existing backup in slot `keep` is deleted/replaced before the rename chain. A missing or non-file source raises an error and changes nothing.",
+      "file_scope": [
+        "boltons/fileutils.py",
+        "tests/test_fileutils.py",
+        "CHANGELOG.md"
+      ],
+      "blocked_by": [],
+      "test_cmd": "python -m pytest -q --doctest-modules boltons/fileutils.py tests/test_fileutils.py"
+    }
+  ]
+}

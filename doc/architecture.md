@@ -835,6 +835,55 @@ fell into it. This is one run on a partitionable goal, written by the same assis
 that wrote the probes, so it is a data point, not a rate. Escalation on real code is
 still unobserved (0 of 23 real-code tasks across bench-1 to bench-4).
 
+**Replay benchmark (2026-11-12): goals SEAM's author did not write.** Seven merged
+commits from boltons' October 2026 sweep (`examples/boltons-replay/`): the goal is the
+contributor PRs' change summaries, extracted by a fixed rule; SEAM starts from the
+fix's parent; the fix's own test files, run only afterwards, are the hidden check.
+Controls: every parent is green, scores 0 target tests, and the fix scores all 28.
+Each plan ran unedited, `--workers 2`; workers `claude-sonnet-5-5`. Caveat: those PRs
+were themselves written by AI agents and describe the fix, so this measures planning
+through integration given a described change, not diagnosis.
+
+| goal | plan | outcome | hidden target tests | cost (plan + run) |
+|---|---|---|---|---|
+| r1 excutils, 1 PR | 1 task | **needs_human** (3 rejections) | 0/1 on master; **1/1 on the escalated branch** | $0.05 + $0.32 |
+| r2 dictutils, 1 PR | 1 task | merged | 2/2 | $0.02 + $0.13 |
+| r3 fileutils, 1 PR | 1 task | merged after 1 rejection | 3/3, **1 regression** | $0.02 + $0.31 |
+| r4 statsutils, 3 PRs | 1 task | merged after 1 rejection | 3/3 | $0.02 + $0.33 |
+| r5 setutils, 6 PRs | 2 tasks, same file, serialized | 2 merged | 8/8 | $0.04 + $0.71 |
+| r6 three modules, 7 PRs | 6 tasks: 3 serialized on fileutils, 3 parallel | 6 merged, no rejection | 7/7 | $0.06 + $0.63 |
+| r7 three modules, 4 PRs | 3 parallel tasks | 3 merged, no rejection | 4/4 | $0.03 + $0.24 |
+
+Totals: 15 tasks, 14 merged, 1 escalated; 27 of 27 target tests pass where work
+merged; 1 regression; $2.91. The planner's decomposition was sound every time: one
+task per module, same-file fixes kept together or serialized, separate modules in
+parallel.
+
+**Both failures trace to the plan's contract, not to decomposition.**
+- *r1, a false escalation* (the first escalation on real code). The planner added a
+  requirement the goal did not ask for: test that a wrapped cause still renders
+  inside its handler. The worker's test of that hit an unrelated edge case
+  (`_DeferredLine.__str__` returns None when a source line is missing); the reviewer
+  rejected its fix as out of scope, then rejected the weakened test, then the fix
+  again. The escalated branch passes the maintainers' test with no regression. The
+  reviewer told the worker to "propose it as a separate task"; no such channel exists
+  (invariant 7: only the lead creates tasks), so the loop could only escalate.
+- *r3, a silent API break.* The PR said files "remain unchanged when the source is
+  missing"; the planner wrote "a missing source raises an error" into the contract
+  under *preserve existing behavior*, though `rotate_file` returned silently. The
+  worker's first attempt kept the old behavior; the reviewer, checking the diff
+  against that contract (invariant 6), rejected it; the worker complied and rewrote
+  the existing test `test_rotate_file_no_rotation` to expect the new error. The test
+  file was in scope, so the full suite passed and the change merged. The maintainers'
+  unchanged test fails on the result.
+
+Reading: the lead's decomposition held up on independent goals; its contract did
+not. A wrong contract is enforced by the very gate meant to catch defects, because
+the reviewer checks against the spec, and an edited pre-existing test removes the
+suite's protection. Two gaps follow: nothing verifies a plan's claims about existing
+behavior, and nothing flags a diff that changes a pre-existing test's assertions.
+Seven goals: a data point, not a rate.
+
 ---
 
 ## 13. MCP server (built)

@@ -1,0 +1,11 @@
+{
+  "goal": "r4-statsutils",
+  "fix": "2873144",
+  "files": [
+    "tests/test_statsutils.py"
+  ],
+  "target": 3,
+  "target_passed": 3,
+  "target_failed": [],
+  "regressions": []
+}
