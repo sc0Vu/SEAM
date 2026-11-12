@@ -31,7 +31,6 @@ import json
 import re
 import subprocess
 import sys
-import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -216,22 +215,32 @@ def _budget(cfg: Config, args: dict) -> float:
 
 def _start_job(cfg: Config, kind: str, argv: list[str]) -> str:
     """Start `cli.py <argv>` detached, logging to jobs/<id>.log; return the job id.
-    The process outlives this server; its exit code is appended to the log."""
+
+    The job runs under `run_job` in its own process and session, which appends the
+    exit code to the log itself: the server may exit or restart mid-run (a client
+    that starts one server per call, a Desktop restart) and `job` still sees it end.
+    """
     cfg.jobs.mkdir(parents=True, exist_ok=True)
     job = f"{kind}-{time.strftime('%Y%m%d-%H%M%S')}"
     log_path = cfg.jobs / f"{job}.log"
-    log = open(log_path, "a")  # noqa: SIM115 -- closed by the waiter thread
-    proc = subprocess.Popen([sys.executable, str(CLI), *argv], stdin=subprocess.DEVNULL,
-                            stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
-                            cwd=str(CLI.parent))
-
-    def wait() -> None:
-        code = proc.wait()
-        log.write(f"\n[seam-mcp] exit {code}\n")
-        log.close()
-
-    threading.Thread(target=wait, daemon=True).start()
+    subprocess.Popen([sys.executable, str(Path(__file__).resolve()), JOB_FLAG,
+                      str(log_path), str(CLI), *argv],
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL, start_new_session=True, cwd=str(CLI.parent))
     return job
+
+
+JOB_FLAG = "--run-job"
+
+
+def run_job(log_path: str, argv: list[str]) -> int:
+    """Run `python <argv>` with output appended to `log_path`, then append
+    `[seam-mcp] exit <code>`: the line `job` reads to report a finished job."""
+    with open(log_path, "a") as log:
+        code = subprocess.call([sys.executable, *argv], stdin=subprocess.DEVNULL,
+                               stdout=log, stderr=subprocess.STDOUT, cwd=str(CLI.parent))
+        log.write(f"\n[seam-mcp] exit {code}\n")
+    return code
 
 
 def draft_plan(cfg: Config, args: dict) -> str:
@@ -431,6 +440,9 @@ def serve(cfg: Config, stdin=sys.stdin, stdout=sys.stdout) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == [JOB_FLAG]:  # internal: a background job started by `_start_job`
+        return run_job(argv[1], argv[2:])
     p = argparse.ArgumentParser(prog="seam-mcp", description=__doc__.splitlines()[0])
     p.add_argument("--state-dir", required=True,
                    type=lambda s: Path(s).expanduser().resolve())

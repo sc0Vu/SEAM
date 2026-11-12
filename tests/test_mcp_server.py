@@ -41,9 +41,23 @@ class FakePopen:
 
 @pytest.fixture
 def fake_jobs(monkeypatch):
+    """The `cli.py ...` part of each job started (after the `run_job` wrapper)."""
     FakePopen.started = []
     monkeypatch.setattr(M.subprocess, "Popen", FakePopen)
-    return FakePopen.started
+
+    class Started(list):
+        def __getitem__(self, i):
+            argv = FakePopen.started[i]
+            assert argv[2] == M.JOB_FLAG  # always under the wrapper that logs the exit
+            return argv[argv.index(str(M.CLI)):]
+
+        def __eq__(self, other):
+            return FakePopen.started == other
+
+        def __len__(self):
+            return len(FakePopen.started)
+
+    return Started()
 
 
 # -- protocol ----------------------------------------------------------------------
@@ -174,8 +188,8 @@ def test_run_starts_a_background_cli_run(cfg, fake_jobs):
                         workers=1, suite_cmd="pytest -q")
     assert not failed and "started job run-" in text
     argv = fake_jobs[0]
-    assert argv[1].endswith("cli.py") and argv[2] == "run"
-    flags = dict(zip(argv[3::2], argv[4::2], strict=False))
+    assert argv[0].endswith("cli.py") and argv[1] == "run"
+    flags = dict(zip(argv[2::2], argv[3::2], strict=False))
     assert flags["--budget-usd"] == "2.0" and flags["--repo"] == str(cfg.repos[0])
     assert flags["--plan"] == str(cfg.plans / "p1.json")
     assert flags["--state-dir"] == str(cfg.state_dir) and flags["--workers"] == "1"
@@ -191,8 +205,8 @@ def test_draft_plan_starts_the_planner_into_the_plans_dir(cfg, fake_jobs):
     text, failed = call(cfg, "draft_plan", repo=str(cfg.repos[0]), goal="add x",
                         name="d1", budget_usd=0.5)
     assert not failed and "show_plan" in text
-    flags = dict(zip(fake_jobs[0][3::2], fake_jobs[0][4::2], strict=False))
-    assert fake_jobs[0][2] == "plan" and flags["--out"] == str(cfg.plans / "d1.json")
+    flags = dict(zip(fake_jobs[0][2::2], fake_jobs[0][3::2], strict=False))
+    assert fake_jobs[0][1] == "plan" and flags["--out"] == str(cfg.plans / "d1.json")
     assert flags["--goal"] == "add x" and flags["--budget-usd"] == "0.5"
 
 
@@ -231,3 +245,32 @@ def test_amend_tool_uses_a_saved_plan(cfg):
     assert failed and "no saved plan" in text
     text, failed = call(cfg, "amend", from_goal=case1["goal"], plan="v2")
     assert not failed and "amends" in text and "cancelled: task 1, task 2" in text
+
+
+def test_a_job_logs_its_exit_even_after_the_server_is_gone(cfg):
+    """The exit line is written by the job's own process, not by the server: here
+    the job is started by a process that exits at once (as a server does when a
+    client starts one per call), and the log still records how the job ended."""
+    import subprocess
+    import sys
+    import time
+
+    starter = (f"import mcp_server as M, pathlib; "
+               f"cfg = M.Config(pathlib.Path({str(cfg.state_dir)!r}), (), 1.0); "
+               f"print(M._start_job(cfg, 'status', "
+               f"['status', '--state-dir', {str(cfg.state_dir)!r}]))")
+    job = subprocess.run([sys.executable, "-c", starter], cwd=Path(M.__file__).parent,
+                         capture_output=True, text=True, check=True).stdout.strip()
+    log = cfg.jobs / f"{job}.log"
+    deadline = time.time() + 30
+    while time.time() < deadline and "[seam-mcp] exit" not in (
+            log.read_text() if log.exists() else ""):
+        time.sleep(0.1)
+    assert log.read_text().rstrip().endswith("[seam-mcp] exit 0")
+
+
+def test_run_job_appends_output_and_the_exit_code(tmp_path):
+    log = tmp_path / "j.log"
+    log.write_text("earlier\n")
+    assert M.run_job(str(log), ["-c", "print('hi'); raise SystemExit(3)"]) == 3
+    assert log.read_text() == "earlier\nhi\n\n[seam-mcp] exit 3\n"

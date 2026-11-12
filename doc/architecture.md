@@ -846,7 +846,9 @@ remote access. SEAM itself opens no port, so it adds no network attack surface.
 `cancel` and `amend` (with a saved plan) call `cli.main`, so they take the writer lock (§5) and obey the same
 rules (§3, human rulings). `save_plan` validates with `plan_from_dict` before saving.
 `draft_plan` and `run` start `cli.py` as a detached background process that logs to
-`<state-dir>/jobs/<id>.log`, and return at once. `run` holds the writer lock itself, so
+`<state-dir>/jobs/<id>.log`, and return at once. The job's own wrapper process
+(`mcp_server.py --run-job`) appends `[seam-mcp] exit <code>` when `cli.py` ends, so
+`job` reports how it finished even if the server exited or restarted meanwhile. `run` holds the writer lock itself, so
 the server never writes task state concurrently with a team, and it is refused up
 front if another writer is active.
 
