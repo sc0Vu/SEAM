@@ -17,6 +17,9 @@ the escalation-rate benchmark, which needs a real codebase.
 
 ## Run it
 
+Commands assume `seam` is on PATH (`pipx install seam-merge`; from a dev checkout,
+`.venv/bin/seam`). Run them from the root of this repository.
+
 ```sh
 # 0. once: a Docker daemon and the sandbox image (python + pytest + Claude Code)
 colima start

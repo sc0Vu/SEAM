@@ -203,3 +203,13 @@ def test_run_rejects_a_malformed_author(capsys):
     with pytest.raises(SystemExit):
         cli.parser().parse_args(["run", "--repo", ".", "--author", "no email"])
     assert "author" in capsys.readouterr().err
+
+
+def test_version_is_the_installed_package_version(capsys):
+    import tomllib
+
+    with open(Path(__file__).parent.parent / "pyproject.toml", "rb") as f:
+        expected = tomllib.load(f)["project"]["version"]
+    with pytest.raises(SystemExit):
+        cli.parser().parse_args(["--version"])
+    assert capsys.readouterr().out.strip() == f"seam-merge {expected}"

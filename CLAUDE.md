@@ -105,9 +105,10 @@ seam status                                 # task states, merge queue, escalati
 seam inspect --task <id>                    # one task's branch, diff, review notes
 seam resolve|rework|rereview|cancel --task <id>  # a human's ruling on an escalation
 seam amend --from-goal <id> --plan <new.json>  # change a goal's direction
+seam image build                            # build the sandbox image (once)
 pytest && ruff check .                      # test + lint gate (use .venv/bin/)
 ```
-All take `--state-dir` (default `./.seam`). The real-agent v1 run is
+All but `image build` take `--state-dir` (default `./.seam`). The real-agent v1 run is
 `examples/greeter/README.md`.
 
 ## Definition of done (every change)

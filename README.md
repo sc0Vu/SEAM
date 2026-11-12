@@ -44,8 +44,8 @@ goal ──▶ LEAD (hand-written plan, or `seam plan`: an LLM planner)
 Each task moves through a state machine (`open → claimed → in_progress → submitted →
 in_review → approved → queued_for_merge → merging → merged`, with bounded retries and
 `needs_human` as the escalation exit). The full design — states, the claim, the
-merge protocol, the invariants — is in **[doc/architecture.md](doc/architecture.md)**;
-the project rules are in [CLAUDE.md](CLAUDE.md).
+merge protocol, the invariants — is in **[doc/architecture.md](https://github.com/sc0Vu/SEAM/blob/main/doc/architecture.md)**;
+the project rules are in [CLAUDE.md](https://github.com/sc0Vu/SEAM/blob/main/CLAUDE.md).
 
 ### Safety model
 
@@ -71,7 +71,7 @@ through the proxy up to that cap.
 
 ## Requirements
 
-- Python ≥ 3.11
+- macOS or Linux (not Windows), Python ≥ 3.11
 - Docker (on macOS, e.g. [Colima](https://github.com/abiosoft/colima)). Colima shares
   only `$HOME` with containers, so keep repos and state dirs under `$HOME`.
 - [Claude Code](https://docs.claude.com/en/docs/claude-code) on the host (the reviewer
@@ -81,12 +81,12 @@ through the proxy up to that cap.
     `claude setup-token`), or
   - `ANTHROPIC_API_KEY`.
 
-## Setup
+## Install
 
 ```sh
-python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
+pipx install seam-merge                   # or: uv tool install seam-merge
 colima start                              # or start Docker another way
-seam image build     # the sandbox image: python + pytest + Claude Code
+seam image build                          # the sandbox image: python + pytest + Claude Code
 
 # set the credential without it landing on screen or in shell history
 read -s "CLAUDE_CODE_OAUTH_TOKEN?token: " && export CLAUDE_CODE_OAUTH_TOKEN
@@ -94,9 +94,14 @@ read -s "CLAUDE_CODE_OAUTH_TOKEN?token: " && export CLAUDE_CODE_OAUTH_TOKEN
 
 Never commit the credential; `.env` and `*.local.*` are gitignored.
 
+The package is `seam-merge` on PyPI (`seam` is an unrelated project); it installs the
+`seam` and `seam-mcp` commands and has no Python dependencies.
+
 ## Quick start: the two v1 cases
 
-[examples/greeter](examples/greeter/README.md) is a four-file repo with two plans:
+The examples live in this repository, so clone it first
+(`git clone https://github.com/sc0Vu/SEAM && cd SEAM`).
+[examples/greeter](https://github.com/sc0Vu/SEAM/blob/main/examples/greeter/README.md) is a four-file repo with two plans:
 case 1 (two disjoint tasks → both merge, zero human touch) and case 2 (a deliberately
 faulty plan whose tasks conflict semantically → one merges, the other is escalated).
 
@@ -152,7 +157,7 @@ All take `--state-dir` (default `./.seam`). Useful `run` options:
 A plan is JSON: a `goal` and `tasks`, each with `key`, `type`, `description`,
 `spec_ref` (the contract it implements), `file_scope` (globs, including its tests),
 `blocked_by` (task keys that must merge first) and `test_cmd`. See
-[examples/boltons/plan2.json](examples/boltons/plan2.json).
+[examples/boltons/plan2.json](https://github.com/sc0Vu/SEAM/blob/main/examples/boltons/plan2.json).
 
 **Cost.** On a subscription, the `$` figures are Claude Code's reported
 API-equivalent cost and count against your plan's usage limits; with an API key they
@@ -187,7 +192,7 @@ SEAM opens no network port. To work remotely, use your client's own remote acces
 ## Results
 
 2026-10-30 and 2026-11-11, Claude Code workers, Opus 5.5 reviewer; full detail and caveats in
-[doc/architecture.md §8, §11, §12](doc/architecture.md).
+[doc/architecture.md §8, §11, §12](https://github.com/sc0Vu/SEAM/blob/main/doc/architecture.md).
 
 | run | outcome |
 |---|---|
@@ -233,17 +238,21 @@ doc/             architecture.md — the design and every measurement
 ## Development
 
 ```sh
+python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 .venv/bin/pytest && .venv/bin/ruff check .
 ```
+
+Releases: bump `version` in `pyproject.toml`, add a `CHANGELOG.md` entry, then push a
+`v<version>` tag; `.github/workflows/release.yml` publishes to PyPI.
 
 The engine, coordinator and state machine import no model runtime, so they are
 unit-tested without model calls; the Docker tests run when a daemon is available.
 Rules for changes (tests and docs in the same change, keep `doc/architecture.md` in
-sync, one logical change per commit) are in [CLAUDE.md](CLAUDE.md).
+sync, one logical change per commit) are in [CLAUDE.md](https://github.com/sc0Vu/SEAM/blob/main/CLAUDE.md).
 
 ## License
 
 SEAM is licensed under the **GNU Affero General Public License v3.0 only**
-(`AGPL-3.0-only`); see [LICENSE](LICENSE). If you distribute SEAM or a modified
+(`AGPL-3.0-only`); see [LICENSE](https://github.com/sc0Vu/SEAM/blob/main/LICENSE). If you distribute SEAM or a modified
 version, or let others use a modified version over a network, you must make its
 source available under the same license.

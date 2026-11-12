@@ -15,6 +15,7 @@ import tempfile
 from collections import Counter
 from pathlib import Path
 
+from seam_merge import __version__
 from seam_merge.coordinator import escalation
 from seam_merge.coordinator.lead import Budget, Lead, goal_budget, load_plan
 from seam_merge.engine.errors import SeamError
@@ -368,6 +369,7 @@ def cmd_inspect(args: argparse.Namespace) -> None:
 
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="seam", description=__doc__)
+    p.add_argument("--version", action="version", version=f"seam-merge {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     def common(sp):

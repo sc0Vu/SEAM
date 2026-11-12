@@ -36,13 +36,13 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from seam_merge import cli
+from seam_merge import __version__, cli
 from seam_merge.coordinator.lead import plan_from_dict
 from seam_merge.engine.errors import SeamError
 from seam_merge.store.lock import active_writer
 
 SERVER_NAME = "seam"
-SERVER_VERSION = "0.0.1"
+SERVER_VERSION = __version__
 PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")  # newest first
 # Jobs run the installed package by module name (`-I`: no cwd or PYTHON* env on the
 # import path), so they work from a pip/pipx install as well as from a checkout.

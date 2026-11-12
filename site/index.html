@@ -197,15 +197,15 @@ footer { border-top: 1px solid var(--line); padding: 28px 0 48px; color: var(--m
 <section id="start">
   <div class="wrap">
     <h2>Get started</h2>
-    <p>Needs Python ≥ 3.11, Docker (on macOS e.g. Colima; keep repos under <code>$HOME</code>),
+    <p>Needs macOS or Linux, Python ≥ 3.11, Docker (on macOS e.g. Colima; keep repos under <code>$HOME</code>),
     Claude Code on the host, and exactly one credential: <code>CLAUDE_CODE_OAUTH_TOKEN</code>
     (from <code>claude setup-token</code>) or <code>ANTHROPIC_API_KEY</code>.</p>
-<pre><code>git clone https://github.com/sc0Vu/SEAM && cd SEAM
-python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
+<pre><code>pipx install seam-merge        # or: uv tool install seam-merge
 seam image build
 read -s "CLAUDE_CODE_OAUTH_TOKEN?token: " && export CLAUDE_CODE_OAUTH_TOKEN
 
-# the happy-path case on a throwaway repo
+# the happy-path case on a throwaway repo (the examples live in the source repo)
+git clone https://github.com/sc0Vu/SEAM && cd SEAM
 examples/greeter/make_repo.sh ~/seam-demo/case1
 seam run --repo ~/seam-demo/case1 \
     --plan examples/greeter/case1.json --state-dir ~/seam-demo/case1-state

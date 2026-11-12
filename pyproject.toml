@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "seam-merge"  # "seam" on PyPI is an unrelated SDK; the import package is seam_merge
-version = "0.0.1"
+version = "0.1.0"
 description = "Software Engineering Agent Merge: many agents, one codebase, one seam."
 readme = "README.md"
 requires-python = ">=3.11"
