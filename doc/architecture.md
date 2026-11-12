@@ -938,6 +938,17 @@ rule from run-to-run variance; the guard itself is checked offline against r3's
 original rewrite (`tests/test_existing_tests.py`). The first gap, verifying a plan's
 claims, stays open.
 
+*Full rerun, same day, with the guard, `may_change_tests` and claim probes*
+(`results/2026-11-12/rerun/`; fresh clones, plans unedited, so the claim check only
+reported). 13 tasks: 12 merged, 1 escalated; 27/27 target tests where work merged;
+**0 regressions** (the morning run had 1); $0.33 planning + $2.40 runs. The guard
+never fired: no run rewrote an existing test. r1 escalated again the same way, and its
+branch again passes the hidden test: the planner again required a rendering test
+inside the handler, and this time wrote no probe for that claim, so the check could
+not flag it (in the claim-probe measurement above it did). Two runs, two false
+escalations on r1: whether the planner probes a claim varies run to run, and the
+worker still has no way to set the side bug aside as a separate task.
+
 ---
 
 ## 13. MCP server (built)

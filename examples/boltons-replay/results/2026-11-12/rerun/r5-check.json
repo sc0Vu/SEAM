@@ -1,0 +1,11 @@
+{
+  "goal": "r5-setutils",
+  "fix": "40fffc5",
+  "files": [
+    "tests/test_setutils.py"
+  ],
+  "target": 8,
+  "target_passed": 8,
+  "target_failed": [],
+  "regressions": []
+}

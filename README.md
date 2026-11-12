@@ -205,6 +205,7 @@ SEAM opens no network port. To work remotely, use your client's own remote acces
 | LLM planner on the bench-2 goal | 2-task plan with the right dependency; found the coupling on its own; $0.07 |
 | that plan, run unedited | 2/2 merged, 0 escalated — but 2 test-passing defects shipped (one inherited from a boltons bug); $0.47 |
 | LLM planner on the bench-1 goal, run unedited | same 8-task plan as the hand-written one; 8/8 merged, 0 escalated; probes found 1 defect, inherited from a boltons bug that bench-1's hand-planned run also hit; $1.44 |
+| replay rerun with the existing-test guard and claim probes | 13 tasks, 12 merged, 1 escalated (r1 again, again a correct branch); 27/27 hidden target tests where work merged; 0 regressions; $2.73 |
 | replay: 7 merged boltons fixes, goals from contributor PRs, judged by the maintainers' hidden tests | 15 tasks, 14 merged, 1 escalated (a false escalation: its branch was correct); 27/27 hidden target tests pass where work merged; 1 silent API break, caused by a wrong planner contract that the reviewer enforced; $2.91 |
 
 What these do **not** show:

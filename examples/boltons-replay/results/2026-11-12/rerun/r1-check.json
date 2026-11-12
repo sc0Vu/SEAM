@@ -1,0 +1,13 @@
+{
+  "goal": "r1-excutils",
+  "fix": "2ecf547",
+  "files": [
+    "tests/test_excutils.py"
+  ],
+  "target": 1,
+  "target_passed": 0,
+  "target_failed": [
+    "tests.test_excutils::test_cause_str_outside_handler"
+  ],
+  "regressions": []
+}
