@@ -829,6 +829,13 @@ both v1 cases passed; they have, §8.)
   saved from the replay it flags the sentence behind r1's trap in both runs where
   r1's plan had no probe ("... that do have full_trace is unchanged"), and its known
   false alarm is a parameter literally named `keep` (r3).
+- *Test commands are checked against the full suite*
+  (`seam_merge/coordinator/plan_checks.py`). `seam plan --suite-cmd` (default as
+  `run`'s) tells the planner the suite command, and warns for a task with no
+  `test_cmd`, or a pytest `test_cmd` missing a collection flag the pytest suite uses
+  (doctest options): such a task can pass its own tests and review, then fail at merge
+  (bench-3's gap). `run --plan` repeats the warning. On the plans saved so far it
+  flags 4 of 71 tasks, bench-3's two among them; non-pytest commands are not compared.
   Planning the 7 goals cost $0.34 (first rule) and $0.38 (second), vs $0.24 without probes.
 
 **Built:** `seam_merge/coordinator/planner.py` (`Planner`, `PlanDraft`, `PlannerFailed`),

@@ -82,7 +82,7 @@ Rules:
   the same contract into both tasks' spec_ref.
 - test_cmd: the command that runs this task's own tests from the repository root,
   using the repository's own test setup. Tests run offline.
-- may_change_tests: existing tests, as `path::name` (or `path::Class::name`), that the
+{suite_rule}- may_change_tests: existing tests, as `path::name` (or `path::Class::name`), that the
   task must rewrite because it deliberately changes the behavior they assert. Usually
   empty. Every other existing test must keep its original statements (adding
   assertions or new tests is always fine); a rewrite of any test not listed is
@@ -104,6 +104,13 @@ Rules:
 """
 
 
+_SUITE_RULE = """\
+  After each merge the FULL suite runs as: {suite}
+  Give test_cmd the same collection flags (e.g. doctest options) for the task's own
+  files, or a task can pass its own tests and review, then fail at merge.
+"""
+
+
 class ClaudeCodePlanner:
     """`Planner` that runs Claude Code headless with read-only tools in a sandbox.
 
@@ -119,7 +126,11 @@ class ClaudeCodePlanner:
         max_budget_usd: float = 1.0,
         timeout: float = 1800,
         claude: str = "claude",
+        suite_cmd: str | None = None,
     ) -> None:
+        """`suite_cmd`: the full suite the merge engine will run, so the planner can
+        give each task's `test_cmd` the same collection flags (e.g. doctests)."""
+        self.suite_cmd = suite_cmd
         self.sandbox = sandbox
         self.id = id
         self.model = model
@@ -130,7 +141,8 @@ class ClaudeCodePlanner:
     def command(self, goal: str) -> str:
         argv = [
             self.claude, "-p", _PROMPT.format(
-                goal=goal.strip(), claim_words=", ".join(f'"{w}"' for w in CLAIM_WORDS)),
+                goal=goal.strip(), claim_words=", ".join(f'"{w}"' for w in CLAIM_WORDS),
+                suite_rule=_SUITE_RULE.format(suite=self.suite_cmd) if self.suite_cmd else ""),
             "--output-format", "json",
             "--tools", ",".join(PLANNER_TOOLS),
             "--dangerously-skip-permissions",  # read-only tools, inside the sandbox
@@ -162,15 +174,12 @@ class ClaudeCodePlanner:
         return PlanDraft(plan=plan, notes=notes, cost_usd=cost, usage=usage_from_result(data))
 
 
-def plan_to_json(draft: PlanDraft, goal_text: str, claims: list | None = None,
-                 unprobed: list | None = None) -> str:
+def plan_to_json(draft: PlanDraft, goal_text: str, **checks: list) -> str:
     """The draft as a plan file `load_plan` reads back, with the goal text, the
-    planner's notes and the claim check (probe results, and statements about current
-    behavior that no probe covers) kept alongside for the human who reviews it."""
+    planner's notes and the plan checks (each a list of findings, e.g. `claim_check`,
+    `unprobed_claims`, `test_cmd_gaps`) kept alongside for the human who reviews it."""
     out = {"goal": draft.plan.goal, "goal_text": goal_text,
            "planner_notes": draft.notes, "tasks": draft.plan.tasks}
-    if claims is not None:
-        out["claim_check"] = [vars(c) for c in claims]
-    if unprobed is not None:
-        out["unprobed_claims"] = [vars(u) for u in unprobed]
+    for name, findings in checks.items():
+        out[name] = [vars(f) for f in findings]
     return json.dumps(out, indent=2) + "\n"

@@ -19,6 +19,7 @@ from seam_merge import __version__
 from seam_merge.coordinator import escalation
 from seam_merge.coordinator.claims import check_claims, unprobed_claims
 from seam_merge.coordinator.lead import Budget, Lead, goal_budget, load_plan
+from seam_merge.coordinator.plan_checks import check_test_cmds
 from seam_merge.engine.errors import SeamError
 from seam_merge.engine.git import GitRepo, Identity
 from seam_merge.engine.merge import MergeEngine
@@ -55,6 +56,9 @@ try:
 except OSError:
     print('egress blocked')
 EOF"""
+
+
+DEFAULT_SUITE_CMD = "python -m pytest -q"
 
 
 class PreflightError(SeamError):
@@ -166,7 +170,8 @@ def cmd_plan(args: argparse.Namespace) -> None:
             check_proxy(proxy, args.image, scratch)
             box = DockerSandbox(args.image, network=proxy.network,
                                 env_values=proxy.worker_env(), user=host_user())
-            planner = ClaudeCodePlanner(box, model=args.model, max_budget_usd=args.budget_usd)
+            planner = ClaudeCodePlanner(box, model=args.model, max_budget_usd=args.budget_usd,
+                                        suite_cmd=args.suite_cmd)
             print(f"planning on {args.repo}@{args.target} (cap ${args.budget_usd:.2f})")
             draft = planner.plan(args.goal, Path(d))
         # The plan's claims about today's code, checked on that same untouched code
@@ -175,7 +180,9 @@ def cmd_plan(args: argparse.Namespace) -> None:
                                                                        user=host_user()))
     _report_proxy(proxy)
     unprobed = unprobed_claims(draft.plan.tasks)
-    out.write_text(plan_to_json(draft, args.goal, claims, unprobed))
+    gaps = check_test_cmds(draft.plan.tasks, args.suite_cmd)
+    out.write_text(plan_to_json(draft, args.goal, claim_check=claims,
+                                unprobed_claims=unprobed, test_cmd_gaps=gaps))
     by_key = {t["key"]: t for t in draft.plan.tasks}
     for t in draft.plan.tasks:
         deps = f"  after {t.get('blocked_by')}" if t.get("blocked_by") else ""
@@ -186,6 +193,7 @@ def cmd_plan(args: argparse.Namespace) -> None:
         print(f"  overlapping scopes (will run one at a time): {overlaps}")
     print(f"\nplanner notes: {draft.notes}")
     _print_claims(claims, unprobed)
+    _print_gaps(gaps)
     usage = format_usage(draft.usage) if draft.usage else "n/a"
     print(f"\nwrote {out}  (${draft.cost_usd:.2f}; {usage})")
     print(f"review it, then: seam run --repo {args.repo} --plan {out} ...")
@@ -209,6 +217,12 @@ def _print_claims(claims, unprobed=()) -> None:
               f"\"{u.excerpt}\"")
     if unprobed:
         print("  Check those statements against the code yourself, or re-plan.")
+
+
+def _print_gaps(gaps) -> None:
+    """Tasks whose own tests will not catch what the merge suite will (warnings)."""
+    for g in gaps:
+        print(f"  WARNING test_cmd: {g.task}: {g.message}")
 
 
 def identity(text: str) -> Identity:
@@ -246,6 +260,7 @@ def _run(args: argparse.Namespace) -> None:
     merger.require_green_baseline()
     if args.plan:
         _add_goal(args)
+        _print_gaps(check_test_cmds(load_plan(args.plan).tasks, args.suite_cmd))
     with CredentialProxyContainer(credential, args.image,
                                   token_cap=args.token_cap) as proxy:
         check_proxy(proxy, args.image, scratch)
@@ -423,6 +438,8 @@ def parser() -> argparse.ArgumentParser:
     pl.add_argument("--image", default=DEFAULT_IMAGE)
     pl.add_argument("--model")
     pl.add_argument("--budget-usd", type=float, default=1.0, help="ceiling for planning")
+    pl.add_argument("--suite-cmd", default=DEFAULT_SUITE_CMD,
+                    help="the FULL suite `run` will use, so test_cmds can match it")
     pl.add_argument("--token-cap", type=int, default=500_000,
                     help="metered tokens the credential proxy forwards (doc §10)")
     pl.set_defaults(func=cmd_plan)
@@ -454,7 +471,7 @@ def parser() -> argparse.ArgumentParser:
     r.add_argument("--token-cap", type=int, default=2_000_000,
                    help="metered tokens the credential proxy forwards for all workers "
                         "of this run, enforced outside the agents (doc §10)")
-    r.add_argument("--suite-cmd", default="python -m pytest -q", help="the FULL suite")
+    r.add_argument("--suite-cmd", default=DEFAULT_SUITE_CMD, help="the FULL suite")
     r.add_argument("--image", default=DEFAULT_IMAGE)
     r.add_argument("--model")
     r.add_argument("--reviewer-model")
