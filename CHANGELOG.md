@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.1 — 2026-11-12
+
+Fixes for running more than one state dir on the same repository.
+
+- **Task branches no longer collide.** They were always `seam/task-<id>`, and ids
+  restart at 1 in every state dir, so a second goal in a fresh `--state-dir` (or a
+  run on another `--target`) on the same repo failed with `git worktree add`, leaving
+  the task stuck. Branches are now `seam/<namespace>/task-<id>`, with a random
+  namespace kept per state dir. Merged branches are deleted; escalated ones are kept.
+- **Tasks stuck in `claimed` are started again.** A task left `claimed` by a run that
+  stopped early (a crash, or the collision above) was never picked up and held its
+  files. The next `run` now starts it, reusing a surviving worktree.
+
+Upgrading: existing state dirs gain a namespace on first use; tasks already in
+progress keep their branches.
+
 ## 0.2.0 — 2026-11-12
 
 Guards against the failures found by replaying 7 merged boltons fixes, goals and
