@@ -42,7 +42,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     diff          TEXT    NOT NULL DEFAULT '',
     base_sha      TEXT,                          -- main before this merge
     merge_sha     TEXT,                          -- the merge commit, recorded pre-publish
-    pending_scope TEXT    NOT NULL DEFAULT '[]'  -- JSON globs of a denied scope request
+    pending_scope TEXT    NOT NULL DEFAULT '[]', -- JSON globs of a denied scope request
+    may_change_tests TEXT NOT NULL DEFAULT '[]'  -- JSON test ids the lead lets it rewrite
 );
 -- Invariant 4 enforced by the database itself: at most one row may be `merging`.
 CREATE UNIQUE INDEX IF NOT EXISTS one_merging ON tasks(state) WHERE state = 'merging';
@@ -125,11 +126,12 @@ class TaskStore:
         with self._tx() as db:
             cur = db.execute(
                 "INSERT INTO tasks (goal_id, type, description, spec_ref, file_scope,"
-                " blocked_by, priority, test_cmd) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                " blocked_by, priority, test_cmd, may_change_tests)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     spec.goal_id, spec.type, spec.description, spec.spec_ref,
                     json.dumps(list(spec.file_scope)), json.dumps(list(spec.blocked_by)),
-                    spec.priority, spec.test_cmd,
+                    spec.priority, spec.test_cmd, json.dumps(list(spec.may_change_tests)),
                 ),
             )
         return self.get(cur.lastrowid)
@@ -289,9 +291,9 @@ class TaskStore:
             if col not in cols:
                 self._db.execute(f"ALTER TABLE runs ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
         task_cols = {r["name"] for r in self._db.execute("PRAGMA table_info(tasks)")}
-        if "pending_scope" not in task_cols:
-            self._db.execute(
-                "ALTER TABLE tasks ADD COLUMN pending_scope TEXT NOT NULL DEFAULT '[]'")
+        for col in ("pending_scope", "may_change_tests"):
+            if col not in task_cols:
+                self._db.execute(f"ALTER TABLE tasks ADD COLUMN {col} TEXT NOT NULL DEFAULT '[]'")
 
     def record_run(self, run: RunRecord) -> None:
         """Append one agent run's cost and tokens (accounting only; no state change)."""
@@ -384,6 +386,7 @@ def _to_task(row: sqlite3.Row) -> Task:
             blocked_by=tuple(json.loads(row["blocked_by"])),
             priority=row["priority"],
             test_cmd=row["test_cmd"],
+            may_change_tests=tuple(json.loads(row["may_change_tests"])),
         ),
         state=State(row["state"]),
         attempts=row["attempts"],

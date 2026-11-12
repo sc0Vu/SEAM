@@ -156,7 +156,9 @@ All take `--state-dir` (default `./.seam`). Useful `run` options:
 
 A plan is JSON: a `goal` and `tasks`, each with `key`, `type`, `description`,
 `spec_ref` (the contract it implements), `file_scope` (globs, including its tests),
-`blocked_by` (task keys that must merge first) and `test_cmd`. See
+`blocked_by` (task keys that must merge first), `test_cmd`, and optionally
+`may_change_tests` (existing tests, `path::name`, the task may rewrite because it
+deliberately changes their behavior; the review gate rejects any other rewrite). See
 [examples/boltons/plan2.json](https://github.com/sc0Vu/SEAM/blob/main/examples/boltons/plan2.json).
 
 **Cost.** On a subscription, the `$` figures are Claude Code's reported

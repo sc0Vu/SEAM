@@ -127,7 +127,8 @@ Denied scope requests are stored with the task (`pending_scope`), and every pass
 retries all `blocked` tasks' requests, so a restart picks them up too.
 
 **Review gate** (`seam_merge/reviewer/gate.py`) — deterministic checks before any model is paid:
-reviewer ≠ author, non-empty diff, every changed path inside file_scope, the task's
+reviewer ≠ author, non-empty diff, every changed path inside file_scope, **no
+pre-existing test rewritten** unless the task lists it in `may_change_tests`, the task's
 own `test_cmd` green on the branch in the sandbox (if it cannot run at all, the task
 escalates as an environment failure, §3); only then the `Reviewer` runtime
 judges the git diff against the spec, given the changed files as they were at the merge
@@ -142,6 +143,22 @@ full source of what the diff touches, uses, or aliases), ~3x cheaper but less te
 dir (no project config). With no tools it can only read, so it runs outside the
 sandbox; the diff is labelled untrusted in the prompt, and a manipulated approve
 still has to pass the merge-time full suite.
+
+*The existing-test guard* (`seam_merge/reviewer/existing_tests.py`). Constraint
+served: invariant 5's second gate is only as strong as the suite, and a worker can
+edit the suite. In the replay (§12, r3) a wrong contract was enforced by the reviewer
+and the worker rewrote a pre-existing test to match, so a behavior change merged with
+everything green. The rule is syntactic: a test function present at the merge base is
+rewritten if it was deleted or any of its original top-level statements or decorators
+(compared as `ast.unparse`) is gone; adding assertions or new tests is free. A rewrite
+the task does not list rejects the attempt before tests run or a model is paid, and
+repeated rejections escalate (invariant 11): when the contract contradicts the
+existing behavior, a human decides. Only the lead authorizes (`may_change_tests`, in
+the plan where a human reads it before `run`). Measured before shipping on every
+SEAM run and maintainer fix available (§12): it flags r3's rewrite and nothing in
+the other 6 replay results, the 4 earlier boltons runs (25 tasks), or 6 of 7
+maintainer fixes; the 7th (r3's own fix) changes 2 existing tests, the 2 that r3's
+plan named. Doctests and tests outside `test_*.py`/`*_test.py` files are not guarded.
 
 ---
 
@@ -238,7 +255,10 @@ attempts (review/merge bounces so far), review_notes, diff,
 base_sha, merge_sha  (main before the merge; the merge commit — recorded before main
                       moves, cleared on each new `take`; see §6 crash-safety),
 pending_scope[]  (globs of a denied scope request, kept while the task is `blocked`
-                  so it is retried even after a restart; cleared when granted)
+                  so it is retried even after a restart; cleared when granted),
+may_change_tests[]  (pre-existing tests, `path::[Class::]name`, the lead lets this
+                     task rewrite because it deliberately changes what they assert;
+                     every other pre-existing test is guarded, §2 review gate)
 ```
 
 **Commit identity.** SEAM makes every commit (agents never run git), so the

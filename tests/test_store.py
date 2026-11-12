@@ -254,7 +254,7 @@ def test_spent_usd_sums_recorded_runs_per_goal(store):
     assert store.spent_usd([]) == 0.0
 
 
-def test_old_task_table_gains_pending_scope(tmp_path):
+def test_old_task_table_gains_the_newer_columns(tmp_path):
     import sqlite3
 
     path = tmp_path / "old.sqlite"
@@ -272,4 +272,10 @@ def test_old_task_table_gains_pending_scope(tmp_path):
     db.close()
     s = TaskStore(path)
     assert s.get(1).pending_scope == ()
+    assert s.get(1).spec.may_change_tests == ()
     s.close()
+
+
+def test_may_change_tests_round_trips(store):
+    ids = ("tests/test_a.py::test_x", "tests/test_a.py::TestY::test_z")
+    assert store.create(spec(["a/**"], may_change_tests=ids)).spec.may_change_tests == ids

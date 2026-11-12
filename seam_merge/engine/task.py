@@ -20,6 +20,10 @@ class TaskSpec:
     blocked_by: tuple[int, ...] = ()
     priority: int = 0
     test_cmd: str = ""
+    # Pre-existing tests (`path::[Class::]name`) this task may rewrite because it
+    # deliberately changes the behavior they assert. Any other pre-existing test must
+    # keep its original statements; the review gate rejects the change otherwise.
+    may_change_tests: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

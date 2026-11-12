@@ -4,12 +4,15 @@ Deterministic checks run first, so a reviewer model is only consulted (and paid 
 once the mechanical bar is met:
 1. independence — the reviewer is not the author (invariant 6);
 2. a non-empty diff that stays inside file_scope (invariant 3);
-3. the task's own tests pass on its branch, run in the sandbox (invariants 5, 10);
-4. only then the reviewer runtime judges the diff against the spec, given the changed
+3. no pre-existing test was rewritten unless the task lists it in
+   `may_change_tests` (`reviewer.existing_tests`): an edited test would let a
+   behavior change pass the full suite unseen;
+4. the task's own tests pass on its branch, run in the sandbox (invariants 5, 10);
+5. only then the reviewer runtime judges the diff against the spec, given the changed
    files as they were at the merge base (whole by default; with `focused_context`,
    large files are cut to what the diff touches and uses; bounded by
    `context_chars`), so it reviews against the real code, not its memory of it;
-5. with `probe_cmd` set, the reviewer's adversarial probe tests run in the sandbox on
+6. with `probe_cmd` set, the reviewer's adversarial probe tests run in the sandbox on
    the branch, and any genuine failure rejects the change (doc §11).
 """
 
@@ -26,6 +29,7 @@ from seam_merge.engine.scope import path_in_scope
 from seam_merge.engine.task import Task
 from seam_merge.reviewer.base import Probe, Reviewer, ReviewRequest, Verdict
 from seam_merge.reviewer.context import split_diff, view
+from seam_merge.reviewer.existing_tests import changed_tests, is_test_file
 from seam_merge.sandbox.base import Sandbox
 
 _OUTPUT_TAIL = 4000
@@ -115,6 +119,16 @@ class ReviewGate:
                 f"edited outside file_scope {list(task.spec.file_scope)}: {outside}. "
                 "Revert those files; if they are truly needed, request a scope expansion.",
             )
+        rewritten = self.rewritten_tests(branch, changed, task.spec.may_change_tests)
+        if rewritten:
+            listed = "\n".join(f"  {how}: {tid}" for tid, how in rewritten.items())
+            return Verdict(False, (
+                "you rewrote pre-existing tests this task does not allow changing:\n"
+                f"{listed}\nThey record current behavior, which the task must keep. "
+                "Restore each one's original statements; you may add assertions or new "
+                "tests. If the task truly cannot be done without changing that behavior, "
+                "leave the tests as they were anyway: the task then contradicts the code, "
+                "and a human will decide."))
 
         test_output = ""
         if task.spec.test_cmd:
@@ -141,6 +155,24 @@ class ReviewGate:
         if self.probe_cmd and verdict.probes:
             return self.run_probes(branch, verdict)
         return verdict
+
+    def rewritten_tests(self, branch: str, changed: list[str],
+                        allowed: tuple[str, ...]) -> dict[str, str]:
+        """Pre-existing tests the branch deleted or whose original statements it
+        changed, minus those the lead allowed: `test id -> "removed" | "changed"`."""
+        base = self.repo.merge_base(self.target, branch)
+        head = self.repo.rev_parse(branch)
+        found: dict[str, str] = {}
+        for path in changed:
+            if not is_test_file(path):
+                continue
+            old = self.repo.read_file(base, path)
+            if old is None:  # a new test file: nothing pre-existing to protect
+                continue
+            new = self.repo.read_file(head, path)
+            found.update(changed_tests(path, old.decode("utf-8", "replace"),
+                                       None if new is None else new.decode("utf-8", "replace")))
+        return {tid: how for tid, how in found.items() if tid not in allowed}
 
     def run_probes(self, branch: str, verdict: Verdict) -> Verdict:
         """Run the reviewer's probes on the branch in the sandbox; a genuine failure

@@ -41,6 +41,9 @@ Rules:
   explicitly says to.
 - Add or update tests for your change, inside your scope. The task's tests run with:
   {test_cmd}
+- Tests that already exist record current behavior: keep every original statement
+  of each one (adding assertions is fine). Only these may be rewritten:
+  {may_change}
 - Do not run git and do not commit. Leave your changes in the working tree.
 {feedback}When done, reply with a short summary of what you changed.
 """
@@ -137,6 +140,7 @@ class ClaudeCodeWorker:
             scope=", ".join(task.spec.file_scope),
             request_file=SCOPE_REQUEST_FILE,
             test_cmd=task.spec.test_cmd or "(none given)",
+            may_change=", ".join(task.spec.may_change_tests) or "(none)",
             feedback=_FEEDBACK.format(notes=notes.replace("\n", "\n  ")) if notes else "",
         )
 

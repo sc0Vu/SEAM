@@ -83,6 +83,11 @@ def plan_from_dict(data: object) -> Plan:
         unknown = set(t.get("blocked_by", [])) - set(keys)
         if unknown:
             raise PlanError(f"task {t['key']!r} depends on unknown tasks {sorted(unknown)}")
+        allowed = t.get("may_change_tests", [])
+        if not isinstance(allowed, list) or not all(
+                isinstance(x, str) and "::" in x and x.split("::")[-1] for x in allowed):
+            raise PlanError(f"task {t['key']!r}: may_change_tests must be a list of "
+                            "test ids like 'tests/test_x.py::test_name'")
     return Plan(goal=goal, tasks=_topological(tasks))
 
 
@@ -140,6 +145,7 @@ class Lead:
                 blocked_by=tuple(created[d].id for d in t.get("blocked_by", [])),
                 priority=t.get("priority", 0),
                 test_cmd=t.get("test_cmd", ""),
+                may_change_tests=tuple(t.get("may_change_tests", [])),
             ))
         return created
 

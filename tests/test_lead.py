@@ -162,3 +162,17 @@ def test_amending_does_not_reset_the_budget():
     assert goal_budget(store, 1.0, ["C"]).spent_usd == pytest.approx(0.9)  # C+B+A
     assert goal_budget(store, 1.0, ["B"]).spent_usd == pytest.approx(0.9)  # B+A
     assert goal_budget(store, 1.0, ["A"]).spent_usd == pytest.approx(0.6)
+
+
+def test_plan_may_allow_existing_tests_to_change(tmp_path):
+    allowed = ["tests/test_x.py::test_old"]
+    plan = load_plan(write_plan(tmp_path, [t("a", may_change_tests=allowed)]))
+    created = Lead(TaskStore(), "g1", Budget(1.0)).submit_plan(plan)
+    assert created["a"].spec.may_change_tests == tuple(allowed)
+
+
+@pytest.mark.parametrize("bad", ["tests/test_x.py::test_old", ["test_old"], [""], [1],
+                                 ["tests/test_x.py::"]])
+def test_may_change_tests_must_be_test_ids(tmp_path, bad):
+    with pytest.raises(PlanError, match="may_change_tests"):
+        load_plan(write_plan(tmp_path, [t("a", may_change_tests=bad)]))

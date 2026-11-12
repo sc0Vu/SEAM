@@ -21,9 +21,10 @@ class RecordingReviewer:
         return self.verdict
 
 
-def task(branch, scope, test_cmd="pytest", owner="w1"):
+def task(branch, scope, test_cmd="pytest", owner="w1", may_change_tests=()):
     spec = TaskSpec(goal_id="g", type="backend", description="d",
-                    file_scope=tuple(scope), test_cmd=test_cmd)
+                    file_scope=tuple(scope), test_cmd=test_cmd,
+                    may_change_tests=tuple(may_change_tests))
     return Task(id=1, spec=spec, state=State.IN_REVIEW, owner=owner, branch=branch,
                 diff="worker's own claimed diff — must be ignored")
 
@@ -216,3 +217,52 @@ def test_ordinary_test_failures_stay_ordinary_rejections(setup):
     branch_with(repo, "seam/t", {"x.py": "from lib import nope\n"})
     v = gate.review(task("seam/t", ["x.py"]))
     assert (v.approve, v.environment) == (False, False)
+
+
+# -- the existing-test guard (doc §6) -------------------------------------------------
+
+EXISTING = "def test_greets():\n    assert greet() is None\n"
+
+
+@pytest.fixture
+def with_tests(tmp_path):
+    repo = make_repo(tmp_path, {"lib.py": "def greet():\n    pass\n",
+                                "tests/test_lib.py": "from lib import greet\n\n" + EXISTING})
+    reviewer, sandbox = RecordingReviewer(), ImportCheckSandbox()
+    return repo, reviewer, sandbox, ReviewGate(GitRepo(repo), sandbox, reviewer)
+
+
+def test_rewriting_an_existing_test_is_rejected_before_tests_or_reviewer(with_tests):
+    repo, reviewer, sandbox, gate = with_tests
+    rewritten = "from lib import greet\n\ndef test_greets():\n    assert True\n"
+    branch_with(repo, "t", {"lib.py": "def greet():\n    return 1\n",
+                            "tests/test_lib.py": rewritten})
+    v = gate.review(task("t", ["lib.py", "tests/**"]))
+    assert not v.approve and "changed: tests/test_lib.py::test_greets" in v.notes
+    assert sandbox.calls == [] and reviewer.requests == []
+
+
+def test_the_lead_can_allow_a_test_to_change(with_tests):
+    repo, reviewer, _, gate = with_tests
+    rewritten = "from lib import greet\n\ndef test_greets():\n    assert True\n"
+    branch_with(repo, "t", {"tests/test_lib.py": rewritten})
+    v = gate.review(task("t", ["tests/**"], may_change_tests=["tests/test_lib.py::test_greets"]))
+    assert v.approve and len(reviewer.requests) == 1
+
+
+def test_deleting_an_existing_test_file_is_rejected(with_tests):
+    repo, _, _, gate = with_tests
+    wt = repo.parent / "wt-del"
+    git(repo, "worktree", "add", "-q", "-b", "t", str(wt), "main")
+    git(wt, "rm", "-q", "tests/test_lib.py")
+    git(wt, "commit", "-q", "-m", "drop tests")
+    v = gate.review(task("t", ["tests/**"]))
+    assert not v.approve and "removed: tests/test_lib.py::test_greets" in v.notes
+
+
+def test_new_tests_and_stronger_existing_tests_pass(with_tests):
+    repo, reviewer, _, gate = with_tests
+    stronger = "from lib import greet\n\n" + EXISTING + "    assert callable(greet)\n"
+    branch_with(repo, "t", {"tests/test_lib.py": stronger,
+                            "tests/test_new.py": "def test_x():\n    assert 1\n"})
+    assert gate.review(task("t", ["tests/**"])).approve

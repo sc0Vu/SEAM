@@ -158,3 +158,12 @@ def test_co_authors_fall_back_to_the_requested_model():
     assert co_authors_from_result({}, "claude-opus-5-5") == (
         Identity("claude-opus-5-5", "noreply@anthropic.com"),)
     assert co_authors_from_result({}) == ()
+
+
+def test_prompt_names_the_existing_tests_the_task_may_rewrite():
+    w = ClaudeCodeWorker("w1", "backend", FakeClaudeSandbox())
+    assert "Only these may be rewritten:\n  (none)" in w.prompt(task())
+    allowed = TaskSpec(goal_id="g", type="backend", description="d", file_scope=("a.py",),
+                       may_change_tests=("tests/test_a.py::test_x",))
+    t = Task(id=7, spec=allowed, state=State.IN_PROGRESS, owner="w1")
+    assert "Only these may be rewritten:\n  tests/test_a.py::test_x" in w.prompt(t)
