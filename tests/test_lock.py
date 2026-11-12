@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from store.lock import StoreBusy, active_writer, writer_lock
+from seam_merge.store.lock import StoreBusy, active_writer, writer_lock
 
 
 def test_second_writer_is_refused_and_told_who_holds_it(tmp_path):
@@ -27,7 +27,7 @@ def test_no_lock_file_means_no_writer(tmp_path):
 def test_lock_dies_with_its_holder(tmp_path):
     """A killed `run` (crash, kill -9) leaves no stale lock behind."""
     code = ("import sys, time; sys.path.insert(0, sys.argv[2]); "
-            "from store.lock import writer_lock\n"
+            "from seam_merge.store.lock import writer_lock\n"
             "with writer_lock(sys.argv[1], 'run'):\n"
             "    print('held', flush=True); time.sleep(60)")
     root = str(__import__("pathlib").Path(__file__).parent.parent)

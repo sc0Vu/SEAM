@@ -1,4 +1,4 @@
-from reviewer.context import WHOLE_FILE_CHARS, FileChange, split_diff, view
+from seam_merge.reviewer.context import WHOLE_FILE_CHARS, FileChange, split_diff, view
 
 PAD = "\n".join(f"def filler_{i}(x):\n    y = x * {i}\n    if y > 10:\n        y -= 1\n"
                 f"    z = [y, x, {i}]\n    return sum(z) + {i}\n" for i in range(300))

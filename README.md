@@ -23,7 +23,7 @@ coders skip: **autonomous integration**.
 ## How it works
 
 ```
-goal ──▶ LEAD (hand-written plan, or `cli.py plan`: an LLM planner)
+goal ──▶ LEAD (hand-written plan, or `seam plan`: an LLM planner)
            │ typed, file-scoped, dependency-ordered tasks
            ▼
          TASK STORE (sqlite) ── atomic claim: type match, deps merged, scopes disjoint
@@ -86,7 +86,7 @@ through the proxy up to that cap.
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 colima start                              # or start Docker another way
-docker build -t seam-sandbox sandbox/     # python + pytest + Claude Code
+docker build -t seam-sandbox seam_merge/sandbox/     # python + pytest + Claude Code
 
 # set the credential without it landing on screen or in shell history
 read -s "CLAUDE_CODE_OAUTH_TOKEN?token: " && export CLAUDE_CODE_OAUTH_TOKEN
@@ -102,9 +102,9 @@ faulty plan whose tasks conflict semantically → one merges, the other is escal
 
 ```sh
 examples/greeter/make_repo.sh ~/seam-demo/case1
-.venv/bin/python cli.py run --repo ~/seam-demo/case1 --plan examples/greeter/case1.json \
+seam run --repo ~/seam-demo/case1 --plan examples/greeter/case1.json \
     --state-dir ~/seam-demo/case1-state --budget-usd 3 --workers 2
-.venv/bin/python cli.py status --state-dir ~/seam-demo/case1-state
+seam status --state-dir ~/seam-demo/case1-state
 ```
 
 SEAM moves the target branch itself, so run it on a **dedicated clone** whose target
@@ -114,17 +114,17 @@ branch is not checked out (`make_repo.sh` leaves `HEAD` detached).
 
 | command | what it does |
 |---|---|
-| `cli.py plan --repo R --goal "…" --out plan.json` | the LLM planner drafts a plan from a goal in prose (read-only, in the sandbox) and writes it for you to review or edit |
-| `cli.py run --repo R --plan plan.json` | load the plan and run the team until nothing more can progress |
-| `cli.py run --repo R` | resume the tasks already in the state dir |
-| `cli.py add-goal --plan plan.json` | load a plan without running it |
-| `cli.py status` | task states, the merge slot and queue, escalations, cost and tokens |
-| `cli.py inspect --task N` | one task: branch, diff, every run with its cost, rejection notes |
-| `cli.py resolve --task N` | requeue an escalated task whose branch a review approved (it escalated at merge); the full suite still runs |
-| `cli.py rework --task N --notes "…"` | send an escalated task back to a worker with your guidance |
-| `cli.py rereview --task N` | after fixing the sandbox image, review a task whose tests could not run in it |
-| `cli.py cancel --task N` | cancel a task and everything that depends on it |
-| `cli.py amend --from-goal A --plan new.json` | change direction: cancel goal A's unstarted tasks, keep merged and in-flight work, load the new plan; A's spend counts toward the new goal's budget |
+| `seam plan --repo R --goal "…" --out plan.json` | the LLM planner drafts a plan from a goal in prose (read-only, in the sandbox) and writes it for you to review or edit |
+| `seam run --repo R --plan plan.json` | load the plan and run the team until nothing more can progress |
+| `seam run --repo R` | resume the tasks already in the state dir |
+| `seam add-goal --plan plan.json` | load a plan without running it |
+| `seam status` | task states, the merge slot and queue, escalations, cost and tokens |
+| `seam inspect --task N` | one task: branch, diff, every run with its cost, rejection notes |
+| `seam resolve --task N` | requeue an escalated task whose branch a review approved (it escalated at merge); the full suite still runs |
+| `seam rework --task N --notes "…"` | send an escalated task back to a worker with your guidance |
+| `seam rereview --task N` | after fixing the sandbox image, review a task whose tests could not run in it |
+| `seam cancel --task N` | cancel a task and everything that depends on it |
+| `seam amend --from-goal A --plan new.json` | change direction: cancel goal A's unstarted tasks, keep merged and in-flight work, load the new plan; A's spend counts toward the new goal's budget |
 
 Commands that change task state refuse to run while another one (usually a `run`)
 holds the state dir, so a human ruling never races a running team.
@@ -166,19 +166,19 @@ and the trailers say which worker ran them: `git log --grep 'SEAM-Worker: backen
 
 ## Use it from Claude Code or Claude Desktop (MCP)
 
-`mcp_server.py` exposes SEAM as MCP tools: `status`, `inspect`, the rulings
+`seam-mcp` exposes SEAM as MCP tools: `status`, `inspect`, the rulings
 (`resolve`, `rework`, `rereview`, `cancel`), plans (`draft_plan`, `save_plan`, `show_plan`),
 `amend`, `run`, and `job` (a background job's log). Register it with Claude Code:
 
 ```sh
-claude mcp add seam -- "$PWD/.venv/bin/python" "$PWD/mcp_server.py" \
+claude mcp add seam -- seam-mcp \
     --state-dir ~/seam-demo/x-state --repo ~/seam-demo/x --max-budget-usd 3
 ```
 
 Limits are set here, at launch, not by the client: one state dir, the repos a client
 may plan or run on (`--repo`, repeatable), and the most a single run or plan may spend.
 Every spending call must also give its own `budget_usd`. `run` and `draft_plan` start
-`cli.py` in the background, and `run` holds the state dir's writer lock as usual. The
+`seam` in the background, and `run` holds the state dir's writer lock as usual. The
 server inherits its environment from the client that starts it, so export the
 credential in the shell you start the client from; don't put it in the MCP config.
 SEAM opens no network port. To work remotely, use your client's own remote access
@@ -216,17 +216,18 @@ What these do **not** show:
 ## Layout
 
 ```
-coordinator/   the lead: plans → tasks, scope rulings, budget; Planner interface
-planners/      planner runtime adapter (Claude Code)
-engine/        task state machine, git ops, the serialized merge engine, orchestrator
-workers/       Worker interface + Claude Code adapter
-reviewer/      the review gate + Claude Code reviewer adapter
-sandbox/       Docker sandbox, credential proxy, sandbox image
-store/         sqlite task store: atomic claim, single merge slot, run accounting
-examples/      greeter (v1 cases), boltons (real-repo benchmarks)
-doc/           architecture.md — the design and every measurement
-cli.py         plan | run | add-goal | amend | status | inspect | resolve | rework | cancel
-mcp_server.py  the same, as MCP tools over stdio
+seam_merge/       the import package (PyPI: seam-merge)
+  coordinator/   the lead: plans → tasks, scope rulings, budget; Planner interface
+  planners/      planner runtime adapter (Claude Code)
+  engine/        task state machine, git ops, the serialized merge engine, orchestrator
+  workers/       Worker interface + Claude Code adapter
+  reviewer/      the review gate + Claude Code reviewer adapter
+  sandbox/       Docker sandbox, credential proxy, sandbox image
+  store/         sqlite task store: atomic claim, single merge slot, run accounting
+  cli.py         `seam`: plan | run | add-goal | amend | status | inspect | resolve | rework | cancel
+  mcp_server.py  `seam-mcp`: the same, as MCP tools over stdio
+examples/        greeter (v1 cases), boltons (real-repo benchmarks)
+doc/             architecture.md — the design and every measurement
 ```
 
 ## Development

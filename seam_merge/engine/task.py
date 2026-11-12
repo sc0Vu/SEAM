@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from engine.states import State
+from seam_merge.engine.states import State
 
 
 @dataclass(frozen=True)

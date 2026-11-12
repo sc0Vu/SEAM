@@ -18,7 +18,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from engine.errors import SeamError
+from seam_merge.engine.errors import SeamError
 
 LOCK_NAME = "writer.lock"
 

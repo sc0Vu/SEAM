@@ -1,5 +1,5 @@
-from engine.usage import RunRecord, Usage, format_usage, totals_by_role
-from store import TaskStore
+from seam_merge.engine.usage import RunRecord, Usage, format_usage, totals_by_role
+from seam_merge.store import TaskStore
 from tests.test_store import spec
 
 

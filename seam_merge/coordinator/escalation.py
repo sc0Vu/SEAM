@@ -21,11 +21,11 @@ shows who decided what. Callers hold the state dir's writer lock (`store.lock`).
 
 from __future__ import annotations
 
-from engine.errors import SeamError
-from engine.states import Event, State
-from engine.task import Task
-from engine.usage import RunRecord, Usage
-from store.sqlite import TaskStore
+from seam_merge.engine.errors import SeamError
+from seam_merge.engine.states import Event, State
+from seam_merge.engine.task import Task
+from seam_merge.engine.usage import RunRecord, Usage
+from seam_merge.store.sqlite import TaskStore
 
 HUMAN = "human"  # role and agent id of a human ruling in the runs table
 _REVIEW_ROLES = {"reviewer", "gate"}

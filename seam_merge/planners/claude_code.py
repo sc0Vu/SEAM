@@ -14,10 +14,10 @@ import json
 import shlex
 from pathlib import Path
 
-from coordinator.lead import PlanError, plan_from_dict
-from coordinator.planner import PlanDraft, PlannerFailed
-from sandbox.base import Sandbox
-from workers.claude_code import parse_result_json, usage_from_result
+from seam_merge.coordinator.lead import PlanError, plan_from_dict
+from seam_merge.coordinator.planner import PlanDraft, PlannerFailed
+from seam_merge.sandbox.base import Sandbox
+from seam_merge.workers.claude_code import parse_result_json, usage_from_result
 
 PLANNER_TOOLS = ("Glob", "Grep", "Read")
 TASK_TYPES = ("backend", "frontend", "devops", "ui", "docs")

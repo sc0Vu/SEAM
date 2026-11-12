@@ -14,17 +14,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
-from engine.git import GitRepo
-from engine.merge import MergeEngine
-from engine.states import Event, State
-from engine.task import Task
-from engine.usage import RunRecord, Usage
-from store.sqlite import TaskStore
-from workers.base import Worker, WorkerResult
+from seam_merge.engine.git import GitRepo
+from seam_merge.engine.merge import MergeEngine
+from seam_merge.engine.states import Event, State
+from seam_merge.engine.task import Task
+from seam_merge.engine.usage import RunRecord, Usage
+from seam_merge.store.sqlite import TaskStore
+from seam_merge.workers.base import Worker, WorkerResult
 
 if TYPE_CHECKING:
-    from coordinator.lead import Lead
-    from reviewer.base import Verdict
+    from seam_merge.coordinator.lead import Lead
+    from seam_merge.reviewer.base import Verdict
 
 
 class Gate(Protocol):

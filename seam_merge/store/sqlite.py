@@ -16,11 +16,11 @@ from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from engine.errors import MergeSlotBusy, StaleState, TaskNotFound
-from engine.scope import scopes_overlap
-from engine.states import DEFAULT_MAX_ATTEMPTS, SCOPE_HOLDING, Event, State, next_state
-from engine.task import Task, TaskSpec
-from engine.usage import RunRecord, Usage
+from seam_merge.engine.errors import MergeSlotBusy, StaleState, TaskNotFound
+from seam_merge.engine.scope import scopes_overlap
+from seam_merge.engine.states import DEFAULT_MAX_ATTEMPTS, SCOPE_HOLDING, Event, State, next_state
+from seam_merge.engine.task import Task, TaskSpec
+from seam_merge.engine.usage import RunRecord, Usage
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS tasks (

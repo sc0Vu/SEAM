@@ -3,10 +3,10 @@ import subprocess
 
 import pytest
 
-from engine.states import State
-from engine.task import Task, TaskSpec
-from reviewer.base import Reviewer, ReviewRequest
-from reviewer.claude_code import ClaudeCodeReviewer, ReviewFailed
+from seam_merge.engine.states import State
+from seam_merge.engine.task import Task, TaskSpec
+from seam_merge.reviewer.base import Reviewer, ReviewRequest
+from seam_merge.reviewer.claude_code import ClaudeCodeReviewer, ReviewFailed
 
 
 def request(diff="+x = 1\n", files=None, omitted=()):
@@ -82,7 +82,7 @@ def test_original_files_are_in_the_prompt_marked_untrusted():
 
 
 def test_default_runner_disables_prompt_caching(monkeypatch):
-    import reviewer.claude_code as rc
+    import seam_merge.reviewer.claude_code as rc
     seen = {}
 
     def fake_run(argv, **kw):

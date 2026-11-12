@@ -19,11 +19,11 @@ import uuid
 from collections.abc import Callable
 from pathlib import Path
 
-from engine.errors import SeamError
-from sandbox.base import RunResult
-from sandbox.proxy import CREDENTIAL_KINDS, HEALTH_PATH
+from seam_merge.engine.errors import SeamError
+from seam_merge.sandbox.base import RunResult
+from seam_merge.sandbox.proxy import CREDENTIAL_KINDS, HEALTH_PATH
 
-DEFAULT_IMAGE = "seam-sandbox"  # built from sandbox/Dockerfile
+DEFAULT_IMAGE = "seam-sandbox"  # built from seam_merge/sandbox/Dockerfile
 WORKER_NETWORK = "seam-workers"  # --internal: no route out except via the proxy
 PROXY_PORT = 8080
 PROXY_SCRIPT = Path(__file__).with_name("proxy.py")  # mounted read-only into the proxy

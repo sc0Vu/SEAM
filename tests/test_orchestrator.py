@@ -13,18 +13,18 @@ from pathlib import Path
 
 import pytest
 
-from coordinator.lead import Budget, Lead
-from engine.git import GitRepo, Identity
-from engine.merge import MergeEngine
-from engine.orchestrator import Orchestrator
-from engine.states import Event, State
-from engine.task import TaskSpec
-from reviewer.base import ReviewRequest, Verdict
-from reviewer.gate import ReviewGate
-from store import TaskStore
+from seam_merge.coordinator.lead import Budget, Lead
+from seam_merge.engine.git import GitRepo, Identity
+from seam_merge.engine.merge import MergeEngine
+from seam_merge.engine.orchestrator import Orchestrator
+from seam_merge.engine.states import Event, State
+from seam_merge.engine.task import TaskSpec
+from seam_merge.reviewer.base import ReviewRequest, Verdict
+from seam_merge.reviewer.gate import ReviewGate
+from seam_merge.store import TaskStore
+from seam_merge.workers.base import WorkerFailed, WorkerResult
 from tests.fakes import ImportCheckSandbox
 from tests.gitfixture import git, make_repo
-from workers.base import WorkerFailed, WorkerResult
 
 LIB = "def greet():\n    return 'hi'\n"
 
@@ -274,7 +274,7 @@ def test_worker_that_keeps_asking_for_scope_escalates(tmp_path):
 
 
 def test_review_probes_are_recorded_with_the_run(tmp_path):
-    from reviewer.base import Probe
+    from seam_merge.reviewer.base import Probe
     probe = Probe("test_probe_a.py", "def test_a():\n    assert True\n")
     reviewer = ScriptedReviewer([Verdict(True, "ok", cost_usd=0.01, probes=(probe,))])
     _, store, _, orch = build(tmp_path, [ScriptedWorker("w1", {"a": writes({"a.py": ""})})],
@@ -308,8 +308,8 @@ def test_scope_request_denied_before_a_restart_is_retried(tmp_path):
 
 
 def test_budget_resumed_from_the_store_caps_a_restarted_run(tmp_path):
-    from coordinator.lead import goal_budget
-    from engine.usage import RunRecord, Usage
+    from seam_merge.coordinator.lead import goal_budget
+    from seam_merge.engine.usage import RunRecord, Usage
 
     w = ScriptedWorker("w1", {"a": writes({"a.py": ""})})
     _, store, lead, orch = build(tmp_path, [w])
@@ -341,7 +341,7 @@ def test_human_rework_reaches_a_worker_of_a_later_run_and_merges(tmp_path):
     """Escalated after 3 rejections; a human reworks it with notes; the next run has
     a different worker, which adopts the task, gets the notes, and the task merges
     only after a fresh approving review."""
-    from coordinator import escalation
+    from seam_merge.coordinator import escalation
 
     scripts = {"x": lambda task, wt, n: {"x.py": f"X = {n}\n"}}  # new content each run
     rejecting = ScriptedReviewer([Verdict(False, "no")] * 3)
@@ -368,8 +368,8 @@ def test_untestable_task_escalates_once_then_rereview_merges_it(tmp_path):
     """The funda-cli case: the sandbox lacks the task's test tool. The task must
     escalate after ONE worker run (no retries the worker can't fix), and once the
     sandbox is fixed, `rereview` must get the same branch merged without rework."""
-    from coordinator import escalation
-    from sandbox.base import RunResult
+    from seam_merge.coordinator import escalation
+    from seam_merge.sandbox.base import RunResult
 
     class Sandbox(ImportCheckSandbox):
         has_go = False

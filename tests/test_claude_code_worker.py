@@ -4,20 +4,20 @@ from pathlib import Path
 
 import pytest
 
-from engine.git import GitRepo, Identity
-from engine.states import State
-from engine.task import Task, TaskSpec
-from engine.usage import Usage
-from sandbox.base import RunResult
-from tests.gitfixture import make_repo
-from workers import Worker, WorkerFailed
-from workers.claude_code import (
+from seam_merge.engine.git import GitRepo, Identity
+from seam_merge.engine.states import State
+from seam_merge.engine.task import Task, TaskSpec
+from seam_merge.engine.usage import Usage
+from seam_merge.sandbox.base import RunResult
+from seam_merge.workers import Worker, WorkerFailed
+from seam_merge.workers.claude_code import (
     SCOPE_REQUEST_FILE,
     ClaudeCodeWorker,
     co_authors_from_result,
     parse_result_json,
     usage_from_result,
 )
+from tests.gitfixture import make_repo
 
 
 def result_line(**kw):

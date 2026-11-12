@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
-import cli
-from coordinator.lead import load_plan
-from engine.scope import scopes_overlap
+from seam_merge import cli
+from seam_merge.coordinator.lead import load_plan
+from seam_merge.engine.scope import scopes_overlap
 from tests.gitfixture import git, make_repo
 
 EXAMPLES = Path(__file__).parent.parent / "examples" / "greeter"
@@ -82,8 +82,8 @@ def test_plan_refuses_an_existing_out_file_before_anything_else(tmp_path, capsys
 
 def _escalated_store(state):
     """A state dir with task 1 escalated after review rejections."""
-    from engine.states import Event, State
-    from store import TaskStore
+    from seam_merge.engine.states import Event, State
+    from seam_merge.store import TaskStore
 
     assert cli.main(["add-goal", "--state-dir", state, "--plan", str(EXAMPLES / "case1.json")]) == 0
     s = TaskStore(Path(state) / "seam.sqlite")
@@ -121,7 +121,7 @@ def test_rework_and_cancel_from_the_cli(tmp_path, capsys):
 
 
 def test_writers_are_refused_while_another_holds_the_state_dir(tmp_path, capsys):
-    from store.lock import writer_lock
+    from seam_merge.store.lock import writer_lock
 
     state = tmp_path / "s"
     _escalated_store(str(state))
@@ -152,7 +152,7 @@ def test_amend_from_the_cli_and_status_shows_the_link(tmp_path, capsys):
 def test_run_refuses_a_red_target_before_loading_or_spending(tmp_path, monkeypatch, capsys):
     """The baseline suite runs first: a target that can't pass (here: the image lacks
     the tool) stops the run before the plan is loaded or the proxy starts."""
-    from sandbox.base import RunResult
+    from seam_merge.sandbox.base import RunResult
 
     class NoToolSandbox:
         def __init__(self, *a, **kw):

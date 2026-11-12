@@ -12,12 +12,12 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from engine.errors import SeamError, TargetCheckedOut
-from engine.git import GitRepo
-from engine.states import Event, State
-from engine.task import Task
-from sandbox.base import RunResult, Sandbox
-from store.sqlite import TaskStore
+from seam_merge.engine.errors import SeamError, TargetCheckedOut
+from seam_merge.engine.git import GitRepo
+from seam_merge.engine.states import Event, State
+from seam_merge.engine.task import Task
+from seam_merge.sandbox.base import RunResult, Sandbox
+from seam_merge.store.sqlite import TaskStore
 
 _OUTPUT_TAIL = 4000
 

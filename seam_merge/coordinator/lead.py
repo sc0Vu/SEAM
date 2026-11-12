@@ -11,10 +11,10 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from engine.errors import SeamError
-from engine.states import TERMINAL, Event, State
-from engine.task import Task, TaskSpec
-from store.sqlite import TaskStore
+from seam_merge.engine.errors import SeamError
+from seam_merge.engine.states import TERMINAL, Event, State
+from seam_merge.engine.task import Task, TaskSpec
+from seam_merge.store.sqlite import TaskStore
 
 
 class PlanError(SeamError):

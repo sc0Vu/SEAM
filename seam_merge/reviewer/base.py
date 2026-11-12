@@ -9,8 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
-from engine.task import Task
-from engine.usage import Usage
+from seam_merge.engine.task import Task
+from seam_merge.engine.usage import Usage
 
 
 @dataclass(frozen=True)

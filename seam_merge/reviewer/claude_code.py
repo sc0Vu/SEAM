@@ -21,9 +21,9 @@ import subprocess
 import tempfile
 from collections.abc import Callable
 
-from engine.errors import SeamError
-from reviewer.base import Probe, ReviewRequest, Verdict
-from workers.claude_code import parse_result_json, usage_from_result
+from seam_merge.engine.errors import SeamError
+from seam_merge.reviewer.base import Probe, ReviewRequest, Verdict
+from seam_merge.workers.claude_code import parse_result_json, usage_from_result
 
 _MAX_DIFF = 200_000
 

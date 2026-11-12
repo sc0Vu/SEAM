@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from engine.errors import IllegalTransition
+from seam_merge.engine.errors import IllegalTransition
 
 DEFAULT_MAX_ATTEMPTS = 3
 

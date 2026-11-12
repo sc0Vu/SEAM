@@ -20,13 +20,13 @@ import tempfile
 from dataclasses import replace
 from pathlib import Path
 
-from engine.errors import SeamError
-from engine.git import GitRepo
-from engine.scope import path_in_scope
-from engine.task import Task
-from reviewer.base import Probe, Reviewer, ReviewRequest, Verdict
-from reviewer.context import split_diff, view
-from sandbox.base import Sandbox
+from seam_merge.engine.errors import SeamError
+from seam_merge.engine.git import GitRepo
+from seam_merge.engine.scope import path_in_scope
+from seam_merge.engine.task import Task
+from seam_merge.reviewer.base import Probe, Reviewer, ReviewRequest, Verdict
+from seam_merge.reviewer.context import split_diff, view
+from seam_merge.sandbox.base import Sandbox
 
 _OUTPUT_TAIL = 4000
 DEFAULT_CONTEXT_CHARS = 200_000  # original-file context per review, ~50k tokens

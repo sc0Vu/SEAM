@@ -13,9 +13,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from coordinator.lead import Plan
-from engine.errors import SeamError
-from engine.usage import Usage
+from seam_merge.coordinator.lead import Plan
+from seam_merge.engine.errors import SeamError
+from seam_merge.engine.usage import Usage
 
 
 @dataclass(frozen=True)

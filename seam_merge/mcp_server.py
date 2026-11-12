@@ -1,7 +1,7 @@
 """SEAM as an MCP server (stdio): drive SEAM from Claude Code, Claude Desktop, or any
 MCP client, including remotely through the client's own remote access.
 
-    python mcp_server.py --state-dir ~/seam-demo/x-state --repo ~/seam-demo/x \
+    seam-mcp --state-dir ~/seam-demo/x-state --repo ~/seam-demo/x \
         [--max-budget-usd 5]
 
 What a client can do is fixed when the server starts, not by the client: one state
@@ -11,7 +11,7 @@ cannot point SEAM at other paths or start an uncapped run.
 
 Tools: status, inspect, the human rulings (resolve, rework, rereview, cancel), plans (draft,
 save, show), amend (change a goal's direction), run, and job (a background job's
-log). `run` and `draft_plan` start `cli.py` as a background process and return at
+log). `run` and `draft_plan` start `seam` (the CLI) as a background process and return at
 once; `run` takes the state dir's writer lock itself, so this server never writes
 task state concurrently with it (the single-writer condition for sqlite). Everything
 else goes through `cli.main`, so it gets the same checks, locking, and messages as
@@ -36,15 +36,18 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import cli
-from coordinator.lead import plan_from_dict
-from engine.errors import SeamError
-from store.lock import active_writer
+from seam_merge import cli
+from seam_merge.coordinator.lead import plan_from_dict
+from seam_merge.engine.errors import SeamError
+from seam_merge.store.lock import active_writer
 
 SERVER_NAME = "seam"
 SERVER_VERSION = "0.0.1"
 PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")  # newest first
-CLI = Path(__file__).with_name("cli.py")
+# Jobs run the installed package by module name (`-I`: no cwd or PYTHON* env on the
+# import path), so they work from a pip/pipx install as well as from a checkout.
+CLI_MODULE = "seam_merge.cli"
+CLI = ["-I", "-m", CLI_MODULE]
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 
 
@@ -94,7 +97,7 @@ class Tool:
 # -- tool handlers ---------------------------------------------------------------
 
 def _cli(cfg: Config, *argv: str) -> str:
-    """Run one `cli.py` subcommand in-process, returning its output; a failure
+    """Run one `seam` subcommand in-process, returning its output; a failure
     becomes a ToolError carrying the CLI's own message."""
     out, err = io.StringIO(), io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
@@ -179,7 +182,7 @@ def save_plan(cfg: Config, args: dict) -> str:
 
 
 def amend(cfg: Config, args: dict) -> str:
-    """Replace a goal with a saved plan; same rules as `cli.py amend`."""
+    """Replace a goal with a saved plan; same rules as `seam amend`."""
     old, plan = args.get("from_goal"), _name(args, "plan")
     if not isinstance(old, str) or not old:
         raise ToolError("from_goal is required")
@@ -214,7 +217,7 @@ def _budget(cfg: Config, args: dict) -> float:
 
 
 def _start_job(cfg: Config, kind: str, argv: list[str]) -> str:
-    """Start `cli.py <argv>` detached, logging to jobs/<id>.log; return the job id.
+    """Start `seam <argv>` detached, logging to jobs/<id>.log; return the job id.
 
     The job runs under `run_job` in its own process and session, which appends the
     exit code to the log itself: the server may exit or restart mid-run (a client
@@ -223,10 +226,10 @@ def _start_job(cfg: Config, kind: str, argv: list[str]) -> str:
     cfg.jobs.mkdir(parents=True, exist_ok=True)
     job = f"{kind}-{time.strftime('%Y%m%d-%H%M%S')}"
     log_path = cfg.jobs / f"{job}.log"
-    subprocess.Popen([sys.executable, str(Path(__file__).resolve()), JOB_FLAG,
-                      str(log_path), str(CLI), *argv],
+    subprocess.Popen([sys.executable, "-I", "-m", "seam_merge.mcp_server", JOB_FLAG,
+                      str(log_path), *CLI, *argv],
                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                     stderr=subprocess.DEVNULL, start_new_session=True, cwd=str(CLI.parent))
+                     stderr=subprocess.DEVNULL, start_new_session=True)
     return job
 
 
@@ -238,7 +241,7 @@ def run_job(log_path: str, argv: list[str]) -> int:
     `[seam-mcp] exit <code>`: the line `job` reads to report a finished job."""
     with open(log_path, "a") as log:
         code = subprocess.call([sys.executable, *argv], stdin=subprocess.DEVNULL,
-                               stdout=log, stderr=subprocess.STDOUT, cwd=str(CLI.parent))
+                               stdout=log, stderr=subprocess.STDOUT)
         log.write(f"\n[seam-mcp] exit {code}\n")
     return code
 

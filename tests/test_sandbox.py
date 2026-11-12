@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from sandbox.base import RunResult, Sandbox
-from sandbox.docker import (
+from seam_merge.sandbox.base import RunResult, Sandbox
+from seam_merge.sandbox.docker import (
     DEFAULT_IMAGE,
     WORKER_NETWORK,
     CredentialProxyContainer,

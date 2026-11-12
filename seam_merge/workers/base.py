@@ -11,9 +11,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from engine.git import Identity
-from engine.task import Task
-from engine.usage import Usage
+from seam_merge.engine.git import Identity
+from seam_merge.engine.task import Task
+from seam_merge.engine.usage import Usage
 
 
 @dataclass(frozen=True)

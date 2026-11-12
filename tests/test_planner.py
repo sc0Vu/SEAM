@@ -3,10 +3,10 @@ import shlex
 
 import pytest
 
-from coordinator.lead import PlanError, load_plan, plan_from_dict
-from coordinator.planner import Planner, PlannerFailed
-from planners.claude_code import PLAN_SCHEMA, ClaudeCodePlanner, plan_to_json
-from sandbox.base import RunResult
+from seam_merge.coordinator.lead import PlanError, load_plan, plan_from_dict
+from seam_merge.coordinator.planner import Planner, PlannerFailed
+from seam_merge.planners.claude_code import PLAN_SCHEMA, ClaudeCodePlanner, plan_to_json
+from seam_merge.sandbox.base import RunResult
 
 DRAFT = {
     "goal": "url-query",

@@ -2,10 +2,10 @@ import json
 
 import pytest
 
-from coordinator.lead import Budget, GoalAlreadyLoaded, Lead, PlanError, load_plan
-from engine.states import State
-from engine.task import TaskSpec
-from store import TaskStore
+from seam_merge.coordinator.lead import Budget, GoalAlreadyLoaded, Lead, PlanError, load_plan
+from seam_merge.engine.states import State
+from seam_merge.engine.task import TaskSpec
+from seam_merge.store import TaskStore
 
 
 def write_plan(tmp_path, tasks, goal="g"):
@@ -71,8 +71,8 @@ def test_loading_a_goal_twice_is_refused_and_creates_nothing(tmp_path):
 
 
 def test_goal_budget_starts_from_recorded_spend():
-    from coordinator.lead import goal_budget
-    from engine.usage import RunRecord, Usage
+    from seam_merge.coordinator.lead import goal_budget
+    from seam_merge.engine.usage import RunRecord, Usage
 
     store = TaskStore()
     t = store.create(TaskSpec(goal_id="g", type="backend", description="d",
@@ -87,7 +87,7 @@ def test_goal_budget_starts_from_recorded_spend():
 # -- amend: a change of direction ---------------------------------------------------
 
 def _plan(goal, *keys, deps=None):
-    from coordinator.lead import plan_from_dict
+    from seam_merge.coordinator.lead import plan_from_dict
 
     deps = deps or {}
     return plan_from_dict({"goal": goal, "tasks": [
@@ -97,7 +97,7 @@ def _plan(goal, *keys, deps=None):
 
 def _old_goal(store):
     """Goal A: `done` merged, `busy` in progress, `todo` open, `after` blocked by todo."""
-    from engine.states import Event
+    from seam_merge.engine.states import Event
 
     a = Lead(store, "A", Budget(1)).submit_plan(
         _plan("A", "done", "busy", "todo", "after", deps={"after": ["todo"]}))
@@ -149,8 +149,8 @@ def test_a_bad_amendment_changes_nothing(old, new, why):
 
 
 def test_amending_does_not_reset_the_budget():
-    from coordinator.lead import goal_budget
-    from engine.usage import RunRecord, Usage
+    from seam_merge.coordinator.lead import goal_budget
+    from seam_merge.engine.usage import RunRecord, Usage
 
     store = TaskStore()
     a = _old_goal(store)

@@ -29,7 +29,7 @@ worker runtime as pluggable.**
 
 - **Worker runtime = pluggable.** A worker is any headless coding agent that, given a
   task + a git worktree, returns a diff. Behind one interface
-  `Worker.run(task, worktree) -> WorkerResult` (`workers/base.py`), where the result
+  `Worker.run(task, worktree) -> WorkerResult` (`seam_merge/workers/base.py`), where the result
   is exactly one of a `diff` or a `scope_request` (globs it needs outside its
   file_scope — it stops rather than editing them, §5). v1 = Claude Code headless;
   alternates = AgentScope `ReActAgent`, SWE-agent. No runtime specifics leak into the
@@ -38,10 +38,10 @@ worker runtime as pluggable.**
 - **Safety = a container sandbox** — all agent-written code and test runs execute in a
   container, never the host. A diff is data until it passes review + merge; its tests
   are untrusted code. Behind one interface `Sandbox.run(cmd, workdir, timeout) ->
-  RunResult` (`sandbox/base.py`); v1 = `DockerSandbox`, a fresh `docker run --rm` per
+  RunResult` (`seam_merge/sandbox/base.py`); v1 = `DockerSandbox`, a fresh `docker run --rm` per
   command with only the work dir mounted, `--pull never` (images are built or pulled
   explicitly, never implicitly by name), `--network none`, `--cap-drop ALL`,
-  `no-new-privileges`, and memory/pid caps. Image: `sandbox/Dockerfile`
+  `no-new-privileges`, and memory/pid caps. Image: `seam_merge/sandbox/Dockerfile`
   (`seam-sandbox`: python + pytest + Claude Code). Test runs get `--network none`.
   Worker runs need the model API, so they run on the `--internal` network
   `seam-workers`, whose only reachable host is SEAM's credential proxy (§10). They
@@ -87,7 +87,7 @@ exploration/working), reviewer + merge = prove_goal gate, made real for mutable 
 dispatching when the goal's token/cost ceiling is hit. It lives with goals, not tasks.
 The `goals` table records each goal and the goal it amends, if any.
 
-**Changing direction** (`Lead.amend`, `cli.py amend --from-goal A --plan new.json`).
+**Changing direction** (`Lead.amend`, `seam amend --from-goal A --plan new.json`).
 The human writes the goal (the one input SEAM cannot infer, and what every review
 checks against). When it changes, `amend` replaces goal A with goal B's plan, under the
 writer lock:
@@ -107,7 +107,7 @@ The **architect** (owns the interface contract) is a hat the lead wears in v1; s
 out later. Contract changes go through the lead, serialized — a worker never changes
 a shared interface unilaterally (the main source of semantic conflicts).
 
-**Orchestrator** (`engine/orchestrator.py`) — the loop that runs a team. One process,
+**Orchestrator** (`seam_merge/engine/orchestrator.py`) — the loop that runs a team. One process,
 and the *only* writer of task state: worker and review runs execute concurrently in
 a thread pool and hand back results; the loop thread applies every transition (the
 condition that keeps sqlite valid). Each pass: drain the merge queue (serially),
@@ -124,7 +124,7 @@ runs already in flight may overshoot it by at most one run each.
 Denied scope requests are stored with the task (`pending_scope`), and every pass
 retries all `blocked` tasks' requests, so a restart picks them up too.
 
-**Review gate** (`reviewer/gate.py`) — deterministic checks before any model is paid:
+**Review gate** (`seam_merge/reviewer/gate.py`) — deterministic checks before any model is paid:
 reviewer ≠ author, non-empty diff, every changed path inside file_scope, the task's
 own `test_cmd` green on the branch in the sandbox (if it cannot run at all, the task
 escalates as an environment failure, §3); only then the `Reviewer` runtime
@@ -133,9 +133,9 @@ base (smallest first, up to `context_chars`, default 200k characters; larger or 
 files are listed as omitted), so it checks the diff against the real surrounding code
 rather than its memory of similar code. Files are sent whole by default; `run
 --review-context focused` instead sends files over 12k characters as a focused view
-(`reviewer/context.py`: an `ast` outline of every definition and assignment, plus the
+(`seam_merge/reviewer/context.py`: an `ast` outline of every definition and assignment, plus the
 full source of what the diff touches, uses, or aliases), ~3x cheaper but less tested
-(§8). v1 reviewer runtime (`reviewer/claude_code.py`): `claude -p` with
+(§8). v1 reviewer runtime (`seam_merge/reviewer/claude_code.py`): `claude -p` with
 **all tools disabled** and a JSON verdict schema, the diff on stdin, from an empty temp
 dir (no project config). With no tools it can only read, so it runs outside the
 sandbox; the diff is labelled untrusted in the prompt, and a manipulated approve
@@ -168,7 +168,7 @@ on restart: task in `merging` ─merge commit on main─▶ merged
                                ─otherwise────────────▶ queued_for_merge
 ```
 
-Implemented as a pure transition table in `engine/states.py` (`next_state`); the store
+Implemented as a pure transition table in `seam_merge/engine/states.py` (`next_state`); the store
 routes every state change through it. `cancel` is refused while `merging` — a merge in
 flight finishes or is recovered, never abandoned half-applied. Cancelling a task
 cancels every task that transitively lists it in `blocked_by`: they could never be
@@ -185,7 +185,7 @@ straight to `needs_human` without counting an attempt and without paying a revie
 Before this, such a rejection went back to the worker, whose next runs could only
 "change nothing" until the retry bound: seen on a Go project run in a Python-only image.
 
-**Human rulings** (`coordinator/escalation.py`; `cli.py resolve | rework | rereview |
+**Human rulings** (`seam_merge/coordinator/escalation.py`; `seam resolve | rework | rereview |
 cancel`).
 These are the only way a task leaves `needs_human`.
 - `resolve` is refused unless the task's latest non-human run is an approving review,
@@ -255,7 +255,7 @@ the adapter drops such entries — a trailer cannot be forged. Merge commits car
 runs under each operator's identity and pushes nothing in v1; a GitHub App (`[bot]`
 identity) is the fit once it pushes or opens PRs.
 
-**Run accounting** (`runs` table, `engine/usage.py`): one row per agent run against a
+**Run accounting** (`runs` table, `seam_merge/engine/usage.py`): one row per agent run against a
 task: `role` (worker | reviewer | gate — a review the deterministic checks decided,
 no model), `agent_id`, `outcome`, `cost_usd`, tokens split into uncached input,
 cache reads, cache writes, and output, as the runtime reports them (Claude Code's
@@ -289,13 +289,13 @@ file_scope non-overlap check is the conflict-prevention core: two in-flight work
 never touch the same files, so most merges are trivial. (v1 sqlite is valid only while
 a single orchestrator process is the sole writer.)
 
-**Writer lock** (`store/lock.py`). Every command that writes task state (`run`,
+**Writer lock** (`seam_merge/store/lock.py`). Every command that writes task state (`run`,
 `add-goal`, `resolve`, `rework`, `cancel`) first takes an exclusive `flock` on
 `<state-dir>/writer.lock`. A second writer is refused (`StoreBusy`) instead of racing
 the running orchestrator. Readers (`status`, `inspect`) take no lock, and `status`
 shows who holds it. The OS releases the lock when its holder exits, crash included.
 
-**v1 implementation** (`store/sqlite.py`): the SQL above is the Postgres target. In
+**v1 implementation** (`seam_merge/store/sqlite.py`): the SQL above is the Postgres target. In
 sqlite the claim is a read-check-write inside one `BEGIN IMMEDIATE` transaction, with
 the scope-holding set from §3 and the glob overlap
 test below. The single `merging` slot is also enforced by the database itself: a
@@ -306,7 +306,7 @@ files for a new feature, so **file_scope is declared at module/directory granula
 (globs like `auth/**`, `api/users.*`), not exact file lists, and overlap is tested on
 those globs. Array `&&` in the SQL above only matches *identical* strings (`auth/**`
 vs `auth/login.py` would pass as disjoint), so overlap is a real glob test
-(`engine/scope.py`): segment-wise, `**` overlaps anything below it, a wildcard segment
+(`seam_merge/engine/scope.py`): segment-wise, `**` overlaps anything below it, a wildcard segment
 is matched against a literal one, and two wildcard segments are assumed to meet. It is
 **conservative** — false "overlap" only serializes two tasks; a false "disjoint" would
 break invariant 2, and it never reports one. When a worker discovers mid-task that it must touch something outside its
@@ -319,7 +319,7 @@ even though scopes are predicted, not known.
 other file. Put them inside the module's scope (`auth/tests/**`) or a per-module test
 dir (`tests/auth/**`); a scope of plain `tests/**` overlaps every other task that adds
 tests and serializes them all. Files that running code generates (`__pycache__/`,
-`*.pyc`, `.pytest_cache/`; `ARTIFACT_EXCLUDES` in `engine/git.py`) are never staged, so
+`*.pyc`, `.pytest_cache/`; `ARTIFACT_EXCLUDES` in `seam_merge/engine/git.py`) are never staged, so
 a worker that runs its tests does not trip the scope check with them.
 
 ---
@@ -336,7 +336,7 @@ trust the worker), (2) the diff implements the spec, not something adjacent, (3)
 correctness/security red flags, (4) stayed in file_scope. → approve | changes_requested
 (bounded; exceed → needs_human).
 
-**Merge gate** (single slot, serialized, crash-safe; `engine/merge.py`): for the one
+**Merge gate** (single slot, serialized, crash-safe; `seam_merge/engine/merge.py`): for the one
 task in `merging` (next taken = priority desc, id asc) —
 1. trial-merge the branch onto current main with **no working tree**:
    `git merge-tree --write-tree`, then `commit-tree` → a two-parent merge commit
@@ -441,7 +441,7 @@ gate rejected as out-of-scope edits; fixed by `ARTIFACT_EXCLUDES` (§5). Branche
 committed before that fix cannot drop the bytecode (deletions are excluded too) and
 need a fresh run.
 
-The v1 lead is a hand-written plan (`coordinator/lead.py`). Its budget covers the
+The v1 lead is a hand-written plan (`seam_merge/coordinator/lead.py`). Its budget covers the
 goals of the run's unfinished tasks and starts from what the `runs` table already
 records for them (`goal_budget`), so restarting `run` never resets the cap: every
 charge to a budget has a `runs` row. Planning cost has no task, so it is not in it. A goal loads once per store: a second load of the same goal id
@@ -602,8 +602,8 @@ worker container ──(internal net, no egress)──▶ seam-proxy ──(brid
   uses the matching auth mode and headers, plus
   `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`.
 
-**Built** in `sandbox/proxy.py` (the proxy) and `CredentialProxyContainer` in
-`sandbox/docker.py` (network + container lifecycle); `cli.py run` starts it, then
+**Built** in `seam_merge/sandbox/proxy.py` (the proxy) and `CredentialProxyContainer` in
+`seam_merge/sandbox/docker.py` (network + container lifecycle); `seam run` starts it, then
 checks from the worker network that the proxy answers and that `1.1.1.1:443` is
 unreachable, before any agent runs. Exactly one credential env var may be set. The
 proxy serves only clients from the internal network's subnet, and its log (request
@@ -679,7 +679,7 @@ them in the sandbox (no network):
 Probes are never merged; they are review evidence, kept with the run. Python/pytest
 only at first (`probe_cmd` on the gate).
 
-**Built** in `reviewer/claude_code.py` (`PROBE_SCHEMA`, `PROBE_INSTRUCTIONS`; at most 3
+**Built** in `seam_merge/reviewer/claude_code.py` (`PROBE_SCHEMA`, `PROBE_INSTRUCTIONS`; at most 3
 probes, names sanitized to `test_probe_*.py`) and `ReviewGate.run_probes`. A failing
 probe ALWAYS rejects (owner's decision): pytest exit 1 (a test failed) or 2 (collection
 failed, e.g. importing what the change never added). Exit 5 / usage errors / timeouts
@@ -731,14 +731,14 @@ both v1 cases passed; they have, §8.)
   goes through the same validation (unique keys, known deps, no cycles). Nothing
   downstream changes.
 - *Behind an interface.* `Planner.plan(goal, repo_snapshot) -> PlanDraft` in
-  `coordinator/` (plain Python); the Claude Code adapter lives in a new `planners/`
+  `seam_merge/coordinator/` (plain Python); the Claude Code adapter lives in a new `seam_merge/planners/`
   package (invariants 7, 8: no runtime imports in the coordinator).
 - *Sandboxed, through the credential proxy.* The planner must read the repo, and repo
   content can carry prompt injection; on the host its Read tool could reach any file
   (e.g. `~/.ssh`) and smuggle it into task text. So it runs like a worker: in the
   sandbox on the `seam-workers` network, over a `git archive` export (no `.git`),
   with only Read/Glob/Grep, returning the plan as `--json-schema` structured output.
-- *Human checkpoint first.* `cli.py plan --repo R --goal "…" --out plan.json` writes the
+- *Human checkpoint first.* `seam plan --repo R --goal "…" --out plan.json` writes the
   plan for a human to read or edit before `run --plan`. Plan-and-run in one step comes
   only after LLM plans are measured.
 - *Planning rules given to the model:* module/directory-level scopes with the tests
@@ -747,10 +747,10 @@ both v1 cases passed; they have, §8.)
   task; report scopes that overlap (they will serialize).
 - *Cost* is capped by `plan --budget-usd` and reported with the plan.
 
-**Built:** `coordinator/planner.py` (`Planner`, `PlanDraft`, `PlannerFailed`),
-`coordinator/lead.py:plan_from_dict` (the shared validation), `planners/claude_code.py`
+**Built:** `seam_merge/coordinator/planner.py` (`Planner`, `PlanDraft`, `PlannerFailed`),
+`seam_merge/coordinator/lead.py:plan_from_dict` (the shared validation), `seam_merge/planners/claude_code.py`
 (`ClaudeCodePlanner`: tools Read/Glob/Grep, `PLAN_SCHEMA` structured output), and
-`cli.py plan`, which exports the target to the state dir, starts the credential proxy,
+`seam plan`, which exports the target to the state dir, starts the credential proxy,
 runs the planner, and writes the plan JSON with the goal text and the planner's notes
 (`goal_text`, `planner_notes`, ignored by `load_plan`). The `plan` command has its own
 `--budget-usd` cap; planning has no task to record a `runs` row against (§8), so its
@@ -836,7 +836,7 @@ still unobserved (0 of 23 real-code tasks across bench-1 to bench-4).
 ## 13. MCP server (built)
 
 **Constraint served: the human in the loop, reachable (invariant 9).** Escalations
-need a human ruling, and the person may not be at the terminal. `mcp_server.py`
+need a human ruling, and the person may not be at the terminal. `seam-mcp` (`seam_merge/mcp_server.py`)
 exposes the CLI as MCP tools over stdio, so any MCP client can read state and rule on
 escalations: Claude Code, Claude Desktop, or either one used remotely through its own
 remote access. SEAM itself opens no port, so it adds no network attack surface.
@@ -845,9 +845,9 @@ remote access. SEAM itself opens no port, so it adds no network attack surface.
 `rereview`,
 `cancel` and `amend` (with a saved plan) call `cli.main`, so they take the writer lock (§5) and obey the same
 rules (§3, human rulings). `save_plan` validates with `plan_from_dict` before saving.
-`draft_plan` and `run` start `cli.py` as a detached background process that logs to
+`draft_plan` and `run` start `seam` as a detached background process that logs to
 `<state-dir>/jobs/<id>.log`, and return at once. The job's own wrapper process
-(`mcp_server.py --run-job`) appends `[seam-mcp] exit <code>` when `cli.py` ends, so
+(`seam_merge.mcp_server --run-job`) appends `[seam-mcp] exit <code>` when `seam` ends, so
 `job` reports how it finished even if the server exited or restarted meanwhile. `run` holds the writer lock itself, so
 the server never writes task state concurrently with a team, and it is refused up
 front if another writer is active.
@@ -862,7 +862,7 @@ annotations mark the read-only and destructive tools, and the server's instructi
 tell the model to confirm with the user before rulings and spending.
 
 **Credential.** The server inherits the environment of the client that starts it, and
-passes it on to the `cli.py` processes. The real credential still reaches only the
+passes it on to the `seam` processes. The real credential still reaches only the
 credential proxy (§10); it is never a tool argument or a tool output.
 
 **Protocol.** Newline-delimited JSON-RPC 2.0, tools only (`initialize`, `ping`,

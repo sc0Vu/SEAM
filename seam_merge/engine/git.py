@@ -16,7 +16,7 @@ import tarfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from engine.errors import GitError
+from seam_merge.engine.errors import GitError
 
 _IDENT = re.compile(r"^([^<>\n]+?) *<([^<>\s]+)>$")
 _EMAIL = re.compile(r"^[^<>\s]+$")

@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from engine.task import Task
-from workers import Worker, WorkerResult
+from seam_merge.engine.task import Task
+from seam_merge.workers import Worker, WorkerResult
 
 
 class EchoWorker:

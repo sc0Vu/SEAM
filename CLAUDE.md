@@ -80,31 +80,32 @@ Postgres, a UI.
 
 ## Layout
 ```
-coordinator/     the lead: goal → typed, file-scoped, dependency-ordered tasks; contract owner
-planners/        planner runtime adapters (claude_code) behind coordinator.planner.Planner
-engine/          the task state machine + the SERIALIZED merge+review engine (the novel core)
-workers/         the pluggable Worker interface + runtime adapters (claude_code, agentscope)
-reviewer/        the independent review gate
-sandbox/         container execution for worker code + test runs
-store/           task store (sqlite v1 → postgres); schema + atomic claim
-contract/        the frozen interface contract the lead owns (workers build against it)
+seam_merge/          the one import package (PyPI: seam-merge); every module lives here
+  coordinator/   the lead: goal → typed, file-scoped, dependency-ordered tasks; contract owner
+  planners/      planner runtime adapters (claude_code) behind coordinator.planner.Planner
+  engine/        the task state machine + the SERIALIZED merge+review engine (the novel core)
+  workers/       the pluggable Worker interface + runtime adapters (claude_code, agentscope)
+  reviewer/      the independent review gate
+  sandbox/       container execution for worker code + test runs
+  store/         task store (sqlite v1 → postgres); schema + atomic claim
+  contract/      the frozen interface contract the lead owns (workers build against it)
+  cli.py         `seam`: plan | run | status | add-goal | amend | inspect | resolve |
+                 rework | cancel
+  mcp_server.py  `seam-mcp`: the CLI as MCP tools (stdio); limits fixed at launch
 doc/
   architecture.md   FULL design — source of truth for the architecture
-cli.py           entrypoint: plan | run | status | add-goal | amend | inspect | resolve |
-                 rework | cancel
-mcp_server.py    the CLI as MCP tools (stdio); limits fixed at launch
 ```
 
 ## Commands
 ```
-python cli.py plan --repo <clone> --goal "<prose>" --out <plan.json>  # LLM drafts a plan
-python cli.py run --repo <clone> --plan <plan.json>  # launch a team on a reviewed plan
-python cli.py add-goal --plan <plan.json>            # load a plan without running
-python cli.py status                                 # task states, merge queue, escalations
-python cli.py inspect --task <id>                    # one task's branch, diff, review notes
-python cli.py resolve|rework|rereview|cancel --task <id>  # a human's ruling on an escalation
-python cli.py amend --from-goal <id> --plan <new.json>  # change a goal's direction
-pytest && ruff check .                               # test + lint gate (use .venv/bin/)
+seam plan --repo <clone> --goal "<prose>" --out <plan.json>  # LLM drafts a plan
+seam run --repo <clone> --plan <plan.json>  # launch a team on a reviewed plan
+seam add-goal --plan <plan.json>            # load a plan without running
+seam status                                 # task states, merge queue, escalations
+seam inspect --task <id>                    # one task's branch, diff, review notes
+seam resolve|rework|rereview|cancel --task <id>  # a human's ruling on an escalation
+seam amend --from-goal <id> --plan <new.json>  # change a goal's direction
+pytest && ruff check .                      # test + lint gate (use .venv/bin/)
 ```
 All take `--state-dir` (default `./.seam`). The real-agent v1 run is
 `examples/greeter/README.md`.

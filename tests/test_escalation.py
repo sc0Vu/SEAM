@@ -2,13 +2,13 @@
 
 import pytest
 
-from coordinator import escalation
-from coordinator.escalation import EscalationError
-from engine.errors import IllegalTransition
-from engine.states import Event, State
-from engine.task import TaskSpec
-from engine.usage import RunRecord, Usage
-from store import TaskStore
+from seam_merge.coordinator import escalation
+from seam_merge.coordinator.escalation import EscalationError
+from seam_merge.engine.errors import IllegalTransition
+from seam_merge.engine.states import Event, State
+from seam_merge.engine.task import TaskSpec
+from seam_merge.engine.usage import RunRecord, Usage
+from seam_merge.store import TaskStore
 
 
 @pytest.fixture

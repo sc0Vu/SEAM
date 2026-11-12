@@ -202,16 +202,16 @@ footer { border-top: 1px solid var(--line); padding: 28px 0 48px; color: var(--m
     (from <code>claude setup-token</code>) or <code>ANTHROPIC_API_KEY</code>.</p>
 <pre><code>git clone https://github.com/sc0Vu/SEAM && cd SEAM
 python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
-docker build -t seam-sandbox sandbox/
+docker build -t seam-sandbox seam_merge/sandbox/
 read -s "CLAUDE_CODE_OAUTH_TOKEN?token: " && export CLAUDE_CODE_OAUTH_TOKEN
 
 # the happy-path case on a throwaway repo
 examples/greeter/make_repo.sh ~/seam-demo/case1
-.venv/bin/python cli.py run --repo ~/seam-demo/case1 \
+seam run --repo ~/seam-demo/case1 \
     --plan examples/greeter/case1.json --state-dir ~/seam-demo/case1-state
 
 # or let the planner draft a plan for your goal, review it, then run it
-.venv/bin/python cli.py plan --repo ~/my-clone --goal "…" --out plan.json</code></pre>
+seam plan --repo ~/my-clone --goal "…" --out plan.json</code></pre>
     <p>SEAM moves the target branch itself: always run it on a dedicated clone. See the
     <a href="https://github.com/sc0Vu/SEAM#readme">README</a> for every command and option.</p>
   </div>

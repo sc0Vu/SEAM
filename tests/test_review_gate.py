@@ -1,11 +1,11 @@
 import pytest
 
-from engine.git import GitRepo
-from engine.states import State
-from engine.task import Task, TaskSpec
-from reviewer.base import Probe, ReviewRequest, Verdict
-from reviewer.gate import ReviewerNotIndependent, ReviewGate
-from sandbox.base import RunResult
+from seam_merge.engine.git import GitRepo
+from seam_merge.engine.states import State
+from seam_merge.engine.task import Task, TaskSpec
+from seam_merge.reviewer.base import Probe, ReviewRequest, Verdict
+from seam_merge.reviewer.gate import ReviewerNotIndependent, ReviewGate
+from seam_merge.sandbox.base import RunResult
 from tests.fakes import ImportCheckSandbox
 from tests.gitfixture import branch_with, git, make_repo
 
@@ -109,7 +109,7 @@ def test_original_context_is_bounded_smallest_first_and_skips_binaries(tmp_path)
 
 
 def test_large_files_are_whole_by_default_and_focused_on_request(tmp_path):
-    from reviewer import context
+    from seam_merge.reviewer import context
     big = "\n".join(f"def f{i}(x):\n    return x + {i}\n" for i in range(2000))
     assert len(big) > context.WHOLE_FILE_CHARS
     repo = make_repo(tmp_path, {"lib.py": "def greet(): pass\n", "big.py": big})

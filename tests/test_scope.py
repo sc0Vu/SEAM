@@ -1,6 +1,6 @@
 import pytest
 
-from engine.scope import globs_overlap, path_in_scope, scopes_overlap
+from seam_merge.engine.scope import globs_overlap, path_in_scope, scopes_overlap
 
 
 @pytest.mark.parametrize(

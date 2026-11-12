@@ -3,7 +3,7 @@
 import re
 from pathlib import Path
 
-from sandbox.base import RunResult
+from seam_merge.sandbox.base import RunResult
 
 
 class ImportCheckSandbox:

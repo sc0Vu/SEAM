@@ -1,9 +1,9 @@
 import pytest
 
-from engine.errors import IllegalTransition, MergeSlotBusy, StaleState
-from engine.states import Event, State
-from engine.task import TaskSpec
-from store import TaskStore
+from seam_merge.engine.errors import IllegalTransition, MergeSlotBusy, StaleState
+from seam_merge.engine.states import Event, State
+from seam_merge.engine.task import TaskSpec
+from seam_merge.store import TaskStore
 
 
 @pytest.fixture
@@ -242,7 +242,7 @@ def test_granted_request_leaves_nothing_pending(store):
 
 
 def test_spent_usd_sums_recorded_runs_per_goal(store):
-    from engine.usage import RunRecord, Usage
+    from seam_merge.engine.usage import RunRecord, Usage
 
     t1 = store.create(spec(["a/**"]))
     t2 = store.create(TaskSpec(goal_id="other", type="backend", description="d",

@@ -7,13 +7,13 @@ file must name something `lib.py` defines — enough to express a semantic confl
 
 import pytest
 
-from engine.errors import TargetCheckedOut
-from engine.git import GitRepo
-from engine.merge import BaselineFailed, MergeEngine
-from engine.states import Event, State
-from engine.task import TaskSpec
-from sandbox.base import RunResult
-from store import TaskStore
+from seam_merge.engine.errors import TargetCheckedOut
+from seam_merge.engine.git import GitRepo
+from seam_merge.engine.merge import BaselineFailed, MergeEngine
+from seam_merge.engine.states import Event, State
+from seam_merge.engine.task import TaskSpec
+from seam_merge.sandbox.base import RunResult
+from seam_merge.store import TaskStore
 from tests.fakes import ImportCheckSandbox
 from tests.gitfixture import branch_with, commit_files, git, make_repo
 

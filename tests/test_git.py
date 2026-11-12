@@ -1,7 +1,7 @@
 import pytest
 
-from engine.errors import GitError
-from engine.git import SEAM_IDENTITY, GitRepo, Identity
+from seam_merge.engine.errors import GitError
+from seam_merge.engine.git import SEAM_IDENTITY, GitRepo, Identity
 from tests.gitfixture import branch_with, commit_files, git, make_repo
 
 

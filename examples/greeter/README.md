@@ -20,7 +20,7 @@ the escalation-rate benchmark, which needs a real codebase.
 ```sh
 # 0. once: a Docker daemon and the sandbox image (python + pytest + Claude Code)
 colima start
-docker build -t seam-sandbox sandbox/
+docker build -t seam-sandbox seam_merge/sandbox/
 
 # 1. auth for the workers. Set exactly ONE of these, by env var only. It is handed
 #    to SEAM's credential proxy; worker containers only ever see a placeholder.
@@ -31,16 +31,16 @@ read -s "CLAUDE_CODE_OAUTH_TOKEN?token: " && export CLAUDE_CODE_OAUTH_TOKEN
 
 # 2. paths must live under $HOME: colima shares only $HOME with containers
 examples/greeter/make_repo.sh ~/seam-demo/case1
-.venv/bin/python cli.py run --repo ~/seam-demo/case1 --plan examples/greeter/case1.json \
+seam run --repo ~/seam-demo/case1 --plan examples/greeter/case1.json \
     --state-dir ~/seam-demo/case1-state --budget-usd 3
 
 examples/greeter/make_repo.sh ~/seam-demo/case2
-.venv/bin/python cli.py run --repo ~/seam-demo/case2 --plan examples/greeter/case2.json \
+seam run --repo ~/seam-demo/case2 --plan examples/greeter/case2.json \
     --state-dir ~/seam-demo/case2-state --budget-usd 3
 
 # 3. look at what happened
-.venv/bin/python cli.py status  --state-dir ~/seam-demo/case2-state
-.venv/bin/python cli.py inspect --state-dir ~/seam-demo/case2-state --task 2
+seam status  --state-dir ~/seam-demo/case2-state
+seam inspect --state-dir ~/seam-demo/case2-state --task 2
 git -C ~/seam-demo/case1 log --oneline --graph main
 ```
 

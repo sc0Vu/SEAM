@@ -8,7 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from sandbox.proxy import (
+from seam_merge.sandbox.proxy import (
     CREDENTIAL_KINDS,
     HEALTH_PATH,
     metered_tokens,

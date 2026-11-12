@@ -1,4 +1,4 @@
-"""The MCP server (mcp_server.py): protocol, tools, and the limits fixed at launch.
+"""The MCP server (seam_merge/mcp_server.py): protocol, tools, and the limits fixed at launch.
 No model calls: background jobs are started with a fake Popen."""
 
 import io
@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-import mcp_server as M
-from store.lock import writer_lock
+from seam_merge import mcp_server as M
+from seam_merge.store.lock import writer_lock
 from tests.test_cli import _escalated_store
 
 EXAMPLES = Path(__file__).parent.parent / "examples" / "greeter"
@@ -41,15 +41,15 @@ class FakePopen:
 
 @pytest.fixture
 def fake_jobs(monkeypatch):
-    """The `cli.py ...` part of each job started (after the `run_job` wrapper)."""
+    """The `seam_merge.cli ...` part of each job started (after the `run_job` wrapper)."""
     FakePopen.started = []
     monkeypatch.setattr(M.subprocess, "Popen", FakePopen)
 
     class Started(list):
         def __getitem__(self, i):
             argv = FakePopen.started[i]
-            assert argv[2] == M.JOB_FLAG  # always under the wrapper that logs the exit
-            return argv[argv.index(str(M.CLI)):]
+            assert argv[1:5] == ["-I", "-m", "seam_merge.mcp_server", M.JOB_FLAG]  # the wrapper
+            return argv[argv.index(M.CLI_MODULE):]
 
         def __eq__(self, other):
             return FakePopen.started == other
@@ -188,7 +188,7 @@ def test_run_starts_a_background_cli_run(cfg, fake_jobs):
                         workers=1, suite_cmd="pytest -q")
     assert not failed and "started job run-" in text
     argv = fake_jobs[0]
-    assert argv[0].endswith("cli.py") and argv[1] == "run"
+    assert argv[0] == M.CLI_MODULE and argv[1] == "run"
     flags = dict(zip(argv[2::2], argv[3::2], strict=False))
     assert flags["--budget-usd"] == "2.0" and flags["--repo"] == str(cfg.repos[0])
     assert flags["--plan"] == str(cfg.plans / "p1.json")
@@ -221,7 +221,7 @@ def test_job_reports_progress_and_exit(cfg):
 
 
 def test_a_real_background_job_logs_its_exit(cfg):
-    """No fake: a real (instant, failing) cli.py process, to check the log plumbing."""
+    """No fake: a real (instant) `seam status` process, to check the log plumbing."""
     import time
 
     job = M._start_job(cfg, "status", ["status", "--state-dir", str(cfg.state_dir)])
@@ -255,7 +255,7 @@ def test_a_job_logs_its_exit_even_after_the_server_is_gone(cfg):
     import sys
     import time
 
-    starter = (f"import mcp_server as M, pathlib; "
+    starter = (f"from seam_merge import mcp_server as M; import pathlib; "
                f"cfg = M.Config(pathlib.Path({str(cfg.state_dir)!r}), (), 1.0); "
                f"print(M._start_job(cfg, 'status', "
                f"['status', '--state-dir', {str(cfg.state_dir)!r}]))")

@@ -15,23 +15,28 @@ import tempfile
 from collections import Counter
 from pathlib import Path
 
-from coordinator import escalation
-from coordinator.lead import Budget, Lead, goal_budget, load_plan
-from engine.errors import SeamError
-from engine.git import GitRepo, Identity
-from engine.merge import MergeEngine
-from engine.orchestrator import Orchestrator
-from engine.scope import scopes_overlap
-from engine.states import TERMINAL, State
-from engine.usage import format_usage, totals_by_role
-from planners.claude_code import ClaudeCodePlanner, plan_to_json
-from reviewer.claude_code import ClaudeCodeReviewer
-from reviewer.gate import DEFAULT_PROBE_CMD, ReviewGate
-from sandbox.docker import DEFAULT_IMAGE, CredentialProxyContainer, DockerSandbox, host_user
-from sandbox.proxy import CREDENTIAL_KINDS
-from store import TaskStore
-from store.lock import active_writer, writer_lock
-from workers.claude_code import ClaudeCodeWorker
+from seam_merge.coordinator import escalation
+from seam_merge.coordinator.lead import Budget, Lead, goal_budget, load_plan
+from seam_merge.engine.errors import SeamError
+from seam_merge.engine.git import GitRepo, Identity
+from seam_merge.engine.merge import MergeEngine
+from seam_merge.engine.orchestrator import Orchestrator
+from seam_merge.engine.scope import scopes_overlap
+from seam_merge.engine.states import TERMINAL, State
+from seam_merge.engine.usage import format_usage, totals_by_role
+from seam_merge.planners.claude_code import ClaudeCodePlanner, plan_to_json
+from seam_merge.reviewer.claude_code import ClaudeCodeReviewer
+from seam_merge.reviewer.gate import DEFAULT_PROBE_CMD, ReviewGate
+from seam_merge.sandbox.docker import (
+    DEFAULT_IMAGE,
+    CredentialProxyContainer,
+    DockerSandbox,
+    host_user,
+)
+from seam_merge.sandbox.proxy import CREDENTIAL_KINDS
+from seam_merge.store import TaskStore
+from seam_merge.store.lock import active_writer, writer_lock
+from seam_merge.workers.claude_code import ClaudeCodeWorker
 
 AUTH_ENV = tuple(CREDENTIAL_KINDS)  # the real one goes only to the credential proxy
 
@@ -173,7 +178,7 @@ def cmd_plan(args: argparse.Namespace) -> None:
     print(f"\nplanner notes: {draft.notes}")
     usage = format_usage(draft.usage) if draft.usage else "n/a"
     print(f"\nwrote {out}  (${draft.cost_usd:.2f}; {usage})")
-    print(f"review it, then: cli.py run --repo {args.repo} --plan {out} ...")
+    print(f"review it, then: seam run --repo {args.repo} --plan {out} ...")
 
 
 def identity(text: str) -> Identity:

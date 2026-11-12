@@ -11,8 +11,12 @@ license = {text = "AGPL-3.0-only"}
 classifiers = ["License :: OSI Approved :: GNU Affero General Public License v3"]
 dependencies = []
 
+[project.scripts]
+seam = "seam_merge.cli:main"
+seam-mcp = "seam_merge.mcp_server:main"
+
 [tool.setuptools]
-packages = ["contract", "coordinator", "engine", "planners", "reviewer", "sandbox", "store", "workers"]
+packages = {find = {include = ["seam_merge*"]}}
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.5"]

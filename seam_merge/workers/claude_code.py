@@ -11,11 +11,11 @@ import json
 import shlex
 from pathlib import Path
 
-from engine.git import GitRepo, Identity
-from engine.task import Task
-from engine.usage import Usage
-from sandbox.base import Sandbox
-from workers.base import WorkerFailed, WorkerResult
+from seam_merge.engine.git import GitRepo, Identity
+from seam_merge.engine.task import Task
+from seam_merge.engine.usage import Usage
+from seam_merge.sandbox.base import Sandbox
+from seam_merge.workers.base import WorkerFailed, WorkerResult
 
 SCOPE_REQUEST_FILE = ".seam-scope-request"
 # What a worker needs to edit and test code. Web, sub-agent and notebook tools are left

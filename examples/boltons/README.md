@@ -17,10 +17,10 @@
 
 ```sh
 examples/boltons/make_repo.sh ~/seam-demo/bench1
-.venv/bin/python cli.py run --repo ~/seam-demo/bench1 --plan examples/boltons/plan.json \
+seam run --repo ~/seam-demo/bench1 --plan examples/boltons/plan.json \
     --state-dir ~/seam-demo/bench1-state --target master --budget-usd 3 --workers 2 \
     --suite-cmd "python -m pytest -q --doctest-modules boltons tests"
-.venv/bin/python cli.py status --state-dir ~/seam-demo/bench1-state
+seam status --state-dir ~/seam-demo/bench1-state
 ```
 
 Results are recorded in `doc/architecture.md` §8.

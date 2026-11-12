@@ -1,7 +1,7 @@
 import pytest
 
-from engine.errors import IllegalTransition
-from engine.states import SCOPE_HOLDING, Event, State, next_state
+from seam_merge.engine.errors import IllegalTransition
+from seam_merge.engine.states import SCOPE_HOLDING, Event, State, next_state
 
 
 def walk(events, state=State.OPEN, attempts=0, max_attempts=3):
