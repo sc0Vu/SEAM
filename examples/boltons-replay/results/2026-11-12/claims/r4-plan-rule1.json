@@ -1,0 +1,45 @@
+{
+  "goal": "stats-mode-sorted-cache-histogram-zero",
+  "goal_text": "Fix the following problems in boltons, as described by contributors. Add or update tests for each fix.\n\n### Keep Stats.mode tie-breaking stable after sorted measures (boltons#534)\n\n`Stats.mode` breaks ties by first appearance, but computing a sorted statistic first can change the answer:\n\n```python\ns = Stats([2, 1, 2, 1])\ns.median  # 1.5\ns.mode    # currently 1; should be 2\n```\n\nWith the default `use_copy=True`, lazy sorting reorders `self.data` before `mode` counts it. The fix keeps that data in its original order and caches a separate sorted view. `clear_cache()` discards the view, and `median_abs_dev` reuses it. No-copy and presorted behavior stay unchanged; trimming still replaces the data and clears the caches.\n\nThe sorted view retains an additional list of references after first use, without copying the numeric objects. This avoids repeatedly sorting the original data. Callers modifying `stats.data` must call `clear_cache()`, as documented; this now also applies to uncached quantile queries on copied data.\n\nTests cover call order, cache refresh, trimming, no-copy and presorted inputs, and unhashable numeric values:\n\n- The test file with the new cases on unchanged master: 8 failed, 19 passed.\n- Affected tests and doctests with the fix: 48 passed.\n- Full tests and doctests: 700 passed on both Python 3.12 and 3.14.\n- The repository's `tox -e py314` environment: 700 passed. Other tox environments were not run.\n\n### Invalidate the presorted hint when clearing Stats caches (boltons#570)\n\n`Stats.clear_cache()` now discards the `is_sorted` hint as well as cached measures. Its documented use after modifying `Stats.data` could otherwise recompute incorrect values from an order that no longer holds:\n\n```python\nstats = Stats([1, 2, 3], is_sorted=True)\nstats.data.append(0)\nstats.clear_cache()\n(stats.min, stats.max, stats.median)  # before: (1, 0, 2.5); expected: (0, 3, 1.5)\n```\n\nReset the hint when clearing the cache, document that behavior, and cover repeated mutations with both copy modes. The `is_sorted=True` optimization remains available until the caller invalidates the cache.\n\nThe regression failed on master. After the fix, `python -m pytest --doctest-modules boltons tests -q` passed: 679 tests and 12 subtests on Python 3.12/Linux. Other platforms were not run locally.\n\nRelated #534 preserves mode tie-breaking while computing sorted measures. That PR leaves `_is_sorted` set after `clear_cache()` too, so it does not fix this presorted-input mutation case. This change does not alter mode tie-breaking or introduce a sorted-data cache. Open/closed searches for `clear_cache`, `is_sorted`, and Stats cache found no matching fix.\n\n### Fix histogram formatting for zero counts (boltons#529)\n\n`Stats([]).format_histogram()` raises `ZeroDivisionError`, even though histogram counting returns a valid zero-count bin. Passing all-zero counts directly to `format_histogram_counts()` also fails.\n\nSet the bar scale to zero when all counts are zero, retaining the existing `|` marker. For example, `Stats([]).format_histogram(width=20)` now returns `0.0: 0 |`.\n\nThe tests cover empty datasets with default and explicit bin counts, single and multiple zero-count bins, and a mixed-count control. Normal histogram output is unchanged.\n\nValidation on Windows with Python 3.12.13:\n\n- Before the fix, the new tests produced 5 division-by-zero failures and 1 passing control.\n- The full test suite, including doctests, passed: 684 tests and 12 subtests.\n- The source distribution and wheel built successfully with `uv build`.\n- After installing the wheel, the full suite passed against the installed package from outside the checkout: 684 tests and 12 subtests.\n- `git diff --check` passed.\n- A separate Codex agent reviewed the diff and found no actionable issues. It did not rerun tests.\n\nFull-suite command:\n\n```bash\npython -B -m pytest -q -p no:cacheprovider --doctest-modules boltons tests\n```\n\nThe GitHub Actions matrix has not run. Other Python versions and operating systems have not been tested.\n\nThe full test suite (python -m pytest -q --doctest-modules boltons tests) must stay green.",
+  "planner_notes": "All three fixes live in boltons/statsutils.py (Stats.__init__, _get_sorted_data, clear_cache, _calc_median_abs_dev, trim_relative, format_histogram_counts) and share tests/test_statsutils*.py, so they interact (clear_cache is touched by two fixes, sorted-view caching by another). Delivered as one task to avoid overlapping scopes and merge conflicts. Risk: other modules importing Stats (few); existing doctests must remain green.",
+  "tasks": [
+    {
+      "key": "stats_fixes",
+      "type": "backend",
+      "description": "In boltons/statsutils.py make three fixes and add tests (in tests/test_statsutils.py and tests/test_statsutils_histogram.py, new tests only).\n\n1) #534: Stats([2,1,2,1]); s.median then s.mode must give 2 (first-appearance tie-break). Currently _get_sorted_data sorts self.data in place when use_copy=True and not is_sorted. Change: self.data is never reordered; _get_sorted_data caches a separate sorted list (e.g. self._sorted_data) when use_copy=True and not _is_sorted; when _is_sorted is True return self.data; when use_copy=False keep returning sorted(self.data) (uncached). clear_cache() discards the cached sorted view. _calc_median_abs_dev reuses _get_sorted_data() instead of sorted(self.data) (note it must not mutate the view). trim_relative still replaces self.data with the trimmed slice of sorted data and must clear caches (including the sorted view) as it does today. Must work with unhashable numeric values (e.g. objects/types for which median works but are unhashable) - the sorted view must not require hashing. Callers modifying stats.data must call clear_cache() (update docs). Tests: call order (median then mode and mode then median), cache refresh after clear_cache with mutation, trimming, use_copy=False, is_sorted=True, unhashable numeric values.\n\n2) #570: clear_cache() must also reset self._is_sorted = False (document it in the docstring). Test: s=Stats([1,2,3],is_sorted=True); s.data.append(0); s.clear_cache(); (s.min,s.max,s.median)==(0,3,1.5); repeat mutations, for both use_copy=True and use_copy=False. is_sorted=True optimization still works before the cache is cleared.\n\n3) #529: in format_histogram_counts, when count_max == 0 set line_k = 0 (avoid ZeroDivisionError) so bars are empty and the existing '|' marker is used. Stats([]).format_histogram(width=20) == '0.0: 0 |'. Tests: empty dataset with default and explicit bins, single and multiple zero-count bins passed directly to format_histogram_counts, plus a mixed-count control with unchanged output.\n\nFull suite must stay green: python -m pytest -q --doctest-modules boltons tests",
+      "spec_ref": "Stats.mode returns the first-appearing value among ties and must be unaffected by earlier sorted measures (median, iqr, trimean, median_abs_dev, get_quantile). Stats.data order is preserved unless trim_relative replaces it. clear_cache() clears cached properties, the sorted view and the _is_sorted hint. format_histogram_counts with all-zero counts: bar_cols scale factor 0, each bar '|', no exception. Normal histogram output unchanged.",
+      "file_scope": [
+        "boltons/statsutils.py",
+        "tests/test_statsutils.py",
+        "tests/test_statsutils_histogram.py"
+      ],
+      "blocked_by": [],
+      "test_cmd": "python -m pytest -q --doctest-modules boltons/statsutils.py tests/test_statsutils.py tests/test_statsutils_histogram.py",
+      "may_change_tests": [],
+      "claim_probes": [
+        {
+          "name": "mode_ties_first_appearance",
+          "code": "from boltons.statsutils import Stats\n\ndef test_mode():\n    assert Stats([2, 1, 2, 1]).mode == 2\n"
+        },
+        {
+          "name": "histogram_normal_output",
+          "code": "from boltons.statsutils import format_histogram_counts\n\ndef test_hist():\n    out = format_histogram_counts([(0, 1), (1, 2)], width=20)\n    assert len(out.splitlines()) == 2\n    assert '#' in out\n"
+        }
+      ]
+    }
+  ],
+  "claim_check": [
+    {
+      "task": "stats_fixes",
+      "name": "mode_ties_first_appearance",
+      "outcome": "holds",
+      "detail": ""
+    },
+    {
+      "task": "stats_fixes",
+      "name": "histogram_normal_output",
+      "outcome": "holds",
+      "detail": ""
+    }
+  ]
+}

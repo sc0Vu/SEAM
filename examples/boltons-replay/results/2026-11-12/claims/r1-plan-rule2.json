@@ -1,0 +1,44 @@
+{
+  "goal": "excutils-render-cause-no-trace",
+  "goal_text": "Fix the following problems in boltons, as described by contributors. Add or update tests for each fix.\n\n### Render wrapped causes when no traceback was captured (boltons#562)\n\n`ExceptionCauseMixin` captures a traceback only while handling its wrapped cause. Wrapping a stored exception outside that handler (or while handling an unrelated error) leaves `full_trace` unset, causing `str(error)` and `get_str()` to raise `AttributeError`. Treat the absent trace as empty and retain the existing cause/message formatting.\n\nValidation: 3 new rendering regressions fail on master and pass with the fix, covering direct wrapping, chained wrapping, and an unrelated active exception. Full suite: 681 tests and 12 subtests pass.\n\nThe full test suite (python -m pytest -q --doctest-modules boltons tests) must stay green.",
+  "planner_notes": "One indivisible fix in boltons/excutils.py plus a new test file tests/test_excutils.py (no existing excutils test file exists). No overlap concerns. Risk: other modules importing ExceptionCauseMixin (e.g. tbutils/docs) are unaffected, since only the absent-attribute case changes.",
+  "tasks": [
+    {
+      "key": "fix_missing_full_trace",
+      "type": "backend",
+      "description": "In boltons/excutils.py, make ExceptionCauseMixin render correctly when no traceback was captured. Currently full_trace is only set inside __new__ when the cause is the currently handled exception (or inherits full_trace from a wrapped cause), so otherwise str(err) and err.get_str() raise AttributeError in _get_trace_str (self.full_trace). Fix: add a class attribute `full_trace = None` on ExceptionCauseMixin (alternatively use getattr(self, 'full_trace', None) in _get_trace_str) so an absent trace is treated as empty. Keep existing formatting. Add new file tests/test_excutils.py with 3 regression tests: (1) direct wrapping of a stored exception outside any except block: `class MyErr(ExceptionCauseMixin): pass`; `e = MyErr(ValueError('boom'), 'msg')` -> str(e) == \"msg (caused by ValueError('boom'))\"-style output without raising, and get_str() does not raise and contains 'MyErr' and 'caused by' and 'ValueError'; (2) chained wrapping: wrap e in another MyErr outside a handler; str and get_str work and mention the root cause ValueError; (3) wrapping a stored exception while an unrelated exception is being handled (inside `except KeyError:`): str and get_str work, no 'Traceback' header. Run the full suite to confirm.",
+      "spec_ref": "ExceptionCauseMixin (boltons/excutils.py): when a cause is supplied but no traceback was captured (cause not the active exception, no full_trace on cause), full_trace must be treated as empty. Then _get_trace_str returns '' so __str__ returns self._get_exc_str(incl_name=False), i.e. '<message> (caused by <RootCauseName: text>)' or ' caused by <RootCause>' if no message; get_str() returns '<ClassName>: <message> (caused by ...)' without a 'Traceback' header. No exception raised. Behavior when a trace is captured, or when there is no cause (str falls back to Exception.__str__), is unchanged.",
+      "file_scope": [
+        "boltons/excutils.py",
+        "tests/test_excutils.py"
+      ],
+      "blocked_by": [],
+      "test_cmd": "python -m pytest -q tests/test_excutils.py",
+      "may_change_tests": [],
+      "claim_probes": [
+        {
+          "name": "no_cause_str_plain",
+          "code": "from boltons.excutils import ExceptionCauseMixin\n\nclass E(ExceptionCauseMixin):\n    pass\n\ndef test_it():\n    assert str(E('hi')) == 'hi'\n"
+        },
+        {
+          "name": "captured_trace_in_handler",
+          "code": "from boltons.excutils import ExceptionCauseMixin\n\nclass E(ExceptionCauseMixin):\n    pass\n\ndef test_it():\n    try:\n        try:\n            raise ValueError('x')\n        except ValueError as ve:\n            raise E(ve, 'm')\n    except E as e:\n        s = str(e)\n    assert 'Wrapped traceback' in s\n    assert 'caused by ValueError' in s\n"
+        }
+      ]
+    }
+  ],
+  "claim_check": [
+    {
+      "task": "fix_missing_full_trace",
+      "name": "no_cause_str_plain",
+      "outcome": "holds",
+      "detail": ""
+    },
+    {
+      "task": "fix_missing_full_trace",
+      "name": "captured_trace_in_handler",
+      "outcome": "false",
+      "detail": "TypeError: __str__ returned non-string (type NoneType)"
+    }
+  ]
+}

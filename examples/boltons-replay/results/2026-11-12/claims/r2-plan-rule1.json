@@ -1,0 +1,34 @@
+{
+  "goal": "omd-update-extend-self",
+  "goal_text": "Fix the following problems in boltons, as described by contributors. Add or update tests for each fix.\n\n### Preserve all values in OrderedMultiDict self-extension (boltons#605)\n\n`OrderedMultiDict.update_extend()` appends every value when its source is another multimap, but self-update only appends each key's latest value. Snapshot `items(multi=True)` in the self case so repeated values and their insertion order are preserved without iterating a changing linked list.\n\nFor example, self-updating `[('a', 1), ('b', 2), ('a', 3)]` now appends that full sequence, rather than just `[('a', 3), ('b', 2)]`.\n\nThe regression fails on the original source. Validation: 681 tests and module doctests pass with `tox -e py314`; 33 dictionary tests also pass in a separate verification run. Python 3.14 reports five deprecation warnings.\n\nThe full test suite (python -m pytest -q --doctest-modules boltons tests) must stay green.",
+  "planner_notes": "Single indivisible fix in boltons/dictutils.py plus a test in tests/test_dictutils.py. Risk: __init__ and __setstate__ call update_extend, but with other args, not self. urlutils has its own update_extend, so it is untouched.",
+  "tasks": [
+    {
+      "key": "omd_self_extend",
+      "type": "backend",
+      "description": "In boltons/dictutils.py, OrderedMultiDict.update_extend: in the `E is self` branch, replace `iterator = iter(E.items())` with a snapshot list of all pairs: `iterator = list(E.iteritems(multi=True))`. The snapshot avoids iterating the linked list while it is being appended to. Add a regression test in tests/test_dictutils.py, for example test_update_extend_self. Build omd = OrderedMultiDict([('a',1),('b',2),('a',3)]), call omd.update_extend(omd), and assert omd.items(multi=True) == [('a',1),('b',2),('a',3),('a',1),('b',2),('a',3)]. Do not modify existing tests.",
+      "spec_ref": "OrderedMultiDict.update_extend(E, **F): when E is self, append every (key, value) pair from self.items(multi=True), in insertion order, preserving repeated values. The pairs are snapshotted first, so the result is the original sequence followed by a copy of it. Example: [('a',1),('b',2),('a',3)] self-extended gives [('a',1),('b',2),('a',3),('a',1),('b',2),('a',3)]. Today self-extension only appends each key's latest value, via E.items(), giving [('a',3),('b',2)] appended. The behavior for other-multimap, mapping and iterable sources is unchanged.",
+      "file_scope": [
+        "boltons/dictutils.py",
+        "tests/test_dictutils.py"
+      ],
+      "blocked_by": [],
+      "test_cmd": "python -m pytest -q --doctest-modules boltons/dictutils.py tests/test_dictutils.py",
+      "may_change_tests": [],
+      "claim_probes": [
+        {
+          "name": "self_extend_only_latest_today",
+          "code": "from boltons.dictutils import OrderedMultiDict\n\ndef test_probe():\n    omd = OrderedMultiDict([('a', 1), ('b', 2), ('a', 3)])\n    omd.update_extend(omd)\n    assert omd.items(multi=True) == [('a', 1), ('b', 2), ('a', 3), ('a', 3), ('b', 2)]\n"
+        }
+      ]
+    }
+  ],
+  "claim_check": [
+    {
+      "task": "omd_self_extend",
+      "name": "self_extend_only_latest_today",
+      "outcome": "holds",
+      "detail": ""
+    }
+  ]
+}

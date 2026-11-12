@@ -94,3 +94,19 @@ def test_planner_declares_which_existing_tests_a_task_may_rewrite(tmp_path):
     assert {t["key"]: t.get("may_change_tests") for t in plan.tasks}["setlist"] == [
         "tests/test_d.py::test_old"]
     assert "may_change_tests:" in ClaudeCodePlanner(sb).command("goal")
+
+
+def test_planner_backs_current_behavior_claims_with_probes(tmp_path):
+    from seam_merge.coordinator.claims import ClaimResult
+
+    item = PLAN_SCHEMA["properties"]["tasks"]["items"]
+    assert "claim_probes" in item["required"]
+    assert "claim_probes:" in ClaudeCodePlanner(FakeSandbox("")).command("goal")
+    draft = json.loads(json.dumps(DRAFT))
+    draft["tasks"][1]["claim_probes"] = [{"name": "old", "code": "def test_x(): pass\n"}]
+    plan = ClaudeCodePlanner(FakeSandbox(result(structured_output=draft))).plan("g", tmp_path)
+    written = json.loads(plan_to_json(plan, "goal text", [ClaimResult("setlist", "old", "holds")]))
+    assert written["claim_check"] == [{"task": "setlist", "name": "old", "outcome": "holds",
+                                       "detail": ""}]
+    probes = {t["key"]: t.get("claim_probes") for t in written["tasks"]}
+    assert probes["setlist"][0]["name"] == "old"

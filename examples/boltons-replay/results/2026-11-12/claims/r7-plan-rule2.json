@@ -1,0 +1,83 @@
+{
+  "goal": "boltons-gc-typeutils-trace-fixes",
+  "goal_text": "Fix the following problems in boltons, as described by contributors. Add or update tests for each fix.\n\n### Include subclass instances in get_all searches (boltons#560)\n\n`get_all(Base)` uses only objects that directly reference `Base`, so it misses instances of subclasses even with `include_subtypes=True` (the default). Search GC-tracked objects when subtypes are requested. Retain the direct-reference optimization for exact-type searches and document the performance distinction.\n\nValidation: the base/child/grandchild regression fails on master and passes after the fix; full suite passes with 679 tests and 12 subtests.\n\n### Restore garbage collection state after nested contexts (boltons#559)\n\nNested uses of `toggle_gc` enable collection as soon as the inner context exits. Entering a context while GC is already disabled also enables collection on exit. Keep a stack of the entry states and restore each state, including exceptional exits.\n\nValidation: 2 new regressions fail on master; full suite passes with 680 tests and 12 subtests.\n\n### Support metaclasses in get_all_subclasses (boltons#505)\n\nCall the built-in subclass descriptor with an explicit class argument so get_all_subclasses(type) and traversal from object do not raise TypeError on metaclasses. Existing traversal order and deduplication remain intact.\n\nBoth new regression tests fail before the fix; all 674 tests and module doctests pass on Python 3.11.15 afterward.\n\n### Return None when a trace hook suppresses a method exception (boltons#584)\n\nWhen a `wrap_trace` hook returns a truthy value for a `raise` event, the original exception is suppressed, but the wrapper then uses an unassigned `ret` and raises `UnboundLocalError`. Set the suppressed call's result to `None`, so return-event delivery and the method return both work. Document that behavior.\n\nThree regressions reproduce the failure before the fix, with default events, raise-only events, and raise/return events. A control verifies that a false-returning hook still propagates the original exception object. The full test suite, including module doctests, passes on CPython 3.12.13: **682 passed and 12 subtests passed**. `git diff --check` passes. Other Python versions were not run.\n\nThe full test suite (python -m pytest -q --doctest-modules boltons tests) must stay green.",
+  "planner_notes": "Four independent fixes in separate modules. #560 and #559 both edit boltons/gcutils.py and tests/test_gcutils.py, so they are one task to avoid overlapping scopes. typeutils and debugutils tasks have disjoint scopes and run in parallel. tests/test_debugutils.py does not exist; the worker creates it. Risk: get_all is deleted on PyPy (unchanged). The full suite count must not regress.",
+  "tasks": [
+    {
+      "key": "gcutils_fixes",
+      "type": "backend",
+      "description": "Fix two bugs in boltons/gcutils.py and add regression tests in tests/test_gcutils.py. (1) boltons#560: get_all(Base) misses subclass instances. (2) boltons#559: GCToggler restores wrong GC state with nested/pre-disabled contexts.",
+      "spec_ref": "(1) get_all(type_obj, include_subtypes=True): still raise TypeError for non-types. When include_subtypes is True, candidates must come from gc.get_objects() (all GC-tracked objects) and be filtered with isinstance(x, type_obj), so instances of children and grandchildren of Base are returned (e.g. class Base; class Child(Base); class Grand(Child); instances of each -> get_all(Base) contains all three). When include_subtypes is False, retain the direct-reference optimization (gc.get_referrers(type_obj) when gc.is_tracked(type_obj), else gc.get_objects()) filtered with type(x) is type_obj. Update the docstring to document the performance distinction: exact-type searches (include_subtypes=False) are fast via referrers; subtype searches scan all tracked objects and are slower. Keep the docstring doctests passing. (2) GCToggler: keep a per-instance stack (list) of entry states. __enter__ pushes gc.isenabled() then calls gc.disable(). __exit__ pops the state; if it was True call gc.enable() (and, if self.postcollect, gc.collect() after enabling); if it was False leave GC disabled (postcollect collection may still be run only when re-enabling; do not enable). Restoration must happen on exceptional exits too and __exit__ must not suppress exceptions (return None/False). Nested `with toggle_gc:` inside `with toggle_gc:` must leave GC disabled after the inner exit and enabled after the outer exit; entering while GC already disabled must leave it disabled on exit. Tests must restore the GC state themselves (gc.enable() in finally). Add: base/child/grandchild get_all regression, and 2 toggle_gc regressions (nested; entered while already disabled), plus optional exception case.",
+      "file_scope": [
+        "boltons/gcutils.py",
+        "tests/test_gcutils.py"
+      ],
+      "blocked_by": [],
+      "test_cmd": "python -m pytest -q --doctest-modules boltons/gcutils.py tests/test_gcutils.py",
+      "may_change_tests": [],
+      "claim_probes": []
+    },
+    {
+      "key": "typeutils_metaclass",
+      "type": "backend",
+      "description": "Fix boltons#505 in boltons/typeutils.py: get_all_subclasses must work with metaclasses (get_all_subclasses(type), and traversal starting from object) without TypeError. Add 2 regression tests in tests/test_typeutils.py.",
+      "spec_ref": "In get_all_subclasses(cls), call the built-in descriptor with an explicit class argument: use type.__subclasses__(cls) for the initial call and type.__subclasses__(cur) inside the loop, instead of cls.__subclasses__() (which fails for metaclasses because type.__subclasses__ is unbound). Keep the existing try/except: if cls is not a type (AttributeError/TypeError from the call, e.g. get_all_subclasses(5) or an instance) raise TypeError('expected type object, not %r' % cls). Note type.__subclasses__(5) raises TypeError, which is covered by the except. Existing breadth-first traversal order and deduplication via the seen set remain unchanged (doctest gives ['B','D','C'] for A->B->C, A->D). New tests: get_all_subclasses(type) returns a list without raising and includes a user-defined metaclass subclassing type; get_all_subclasses(object) does not raise and includes a user-defined class.",
+      "file_scope": [
+        "boltons/typeutils.py",
+        "tests/test_typeutils.py"
+      ],
+      "blocked_by": [],
+      "test_cmd": "python -m pytest -q --doctest-modules boltons/typeutils.py tests/test_typeutils.py",
+      "may_change_tests": [],
+      "claim_probes": [
+        {
+          "name": "subclass_order_and_dedup",
+          "code": "from boltons.typeutils import get_all_subclasses\n\ndef test_order():\n    class A: pass\n    class B(A): pass\n    class C(B): pass\n    class D(A): pass\n    assert [t.__name__ for t in get_all_subclasses(A)] == ['B', 'D', 'C']\n    assert get_all_subclasses(C) == []\n\ndef test_dedup():\n    class A: pass\n    class B(A): pass\n    class C(A): pass\n    class D(B, C): pass\n    r = get_all_subclasses(A)\n    assert r.count(D) == 1\n"
+        },
+        {
+          "name": "non_type_raises",
+          "code": "import pytest\nfrom boltons.typeutils import get_all_subclasses\n\ndef test_nontype():\n    with pytest.raises(TypeError):\n        get_all_subclasses(5)\n"
+        }
+      ]
+    },
+    {
+      "key": "debugutils_trace_suppress",
+      "type": "backend",
+      "description": "Fix boltons#584 in boltons/debugutils.py wrap_trace: when a hook returns truthy for a 'raise' event, the exception is suppressed but `ret` is unassigned causing UnboundLocalError. Create tests/test_debugutils.py with regressions.",
+      "spec_ref": "In wrap_method's wrapped(), inside the `except Exception:` branch under `if do_raise:`, after the hook call: if hook returns falsy, re-raise the original exception with bare `raise` (same exception object propagates, unchanged); if truthy, set `ret = None` so the return-event hook (if do_return) is called with result=None and the wrapped method returns None. Document this in the wrap_trace docstring (hook returning a true value for a 'raise' event suppresses the exception; the method call then returns None and any 'return' event gets result None). Tests (new file tests/test_debugutils.py): wrap a object whose method raises (e.g. a class with def boom(self): raise ValueError('x')); with a hook that returns True for event=='raise' and records events: (a) default events: traced.boom() returns None and recorded events include call, raise, return (return result None); (b) events='raise': returns None, no UnboundLocalError; (c) events=['raise','return']: returns None and return event delivered with result None; (d) control: hook returning False for raise propagates the original exception object (pytest.raises as excinfo; excinfo.value is the instance raised, e.g. a module-level instance the method raises). Hooks are called as hook(event=..., label=..., obj=..., attr_name=..., args=..., kwargs=..., result=...) by keyword for call/raise/return but positionally for get/set/del ('get', label, obj, attr_name, (), {}, result=ret), so write hooks with signature (event, label, obj, attr_name, args, kwargs, result=None).",
+      "file_scope": [
+        "boltons/debugutils.py",
+        "tests/test_debugutils.py"
+      ],
+      "blocked_by": [],
+      "test_cmd": "python -m pytest -q --doctest-modules boltons/debugutils.py tests/test_debugutils.py",
+      "may_change_tests": [],
+      "claim_probes": [
+        {
+          "name": "false_hook_propagates_exception",
+          "code": "import pytest\nfrom boltons.debugutils import wrap_trace\n\nERR = ValueError('x')\n\nclass T:\n    def boom(self):\n        raise ERR\n\ndef test_prop():\n    def hook(event, label, obj, attr_name, args, kwargs, result=None):\n        return False\n    t = wrap_trace(T(), hook=hook, which='boom')\n    with pytest.raises(ValueError) as ei:\n        t.boom()\n    assert ei.value is ERR\n"
+        }
+      ]
+    }
+  ],
+  "claim_check": [
+    {
+      "task": "typeutils_metaclass",
+      "name": "subclass_order_and_dedup",
+      "outcome": "holds",
+      "detail": ""
+    },
+    {
+      "task": "typeutils_metaclass",
+      "name": "non_type_raises",
+      "outcome": "holds",
+      "detail": ""
+    },
+    {
+      "task": "debugutils_trace_suppress",
+      "name": "false_hook_propagates_exception",
+      "outcome": "holds",
+      "detail": ""
+    }
+  ]
+}

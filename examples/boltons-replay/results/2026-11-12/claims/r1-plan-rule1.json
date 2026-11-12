@@ -1,0 +1,22 @@
+{
+  "goal": "excutils-no-trace-render",
+  "goal_text": "Fix the following problems in boltons, as described by contributors. Add or update tests for each fix.\n\n### Render wrapped causes when no traceback was captured (boltons#562)\n\n`ExceptionCauseMixin` captures a traceback only while handling its wrapped cause. Wrapping a stored exception outside that handler (or while handling an unrelated error) leaves `full_trace` unset, causing `str(error)` and `get_str()` to raise `AttributeError`. Treat the absent trace as empty and retain the existing cause/message formatting.\n\nValidation: 3 new rendering regressions fail on master and pass with the fix, covering direct wrapping, chained wrapping, and an unrelated active exception. Full suite: 681 tests and 12 subtests pass.\n\nThe full test suite (python -m pytest -q --doctest-modules boltons tests) must stay green.",
+  "planner_notes": "Single indivisible fix in boltons/excutils.py plus a new test file tests/test_excutils.py (no existing tests reference ExceptionCauseMixin). The fix is a class-level default full_trace = None, or equivalent getattr in _get_trace_str. No overlapping scopes. Risk: the __new__ path copies cause._tb and cause._stack only when cause.full_trace is not None, so the default must stay None (not empty list) or that branch would break.",
+  "tasks": [
+    {
+      "key": "fix_missing_full_trace",
+      "type": "backend",
+      "description": "In boltons/excutils.py, make ExceptionCauseMixin render str(err) and err.get_str() without AttributeError when no traceback was captured (cause wrapped outside the except handler for it, or while handling an unrelated exception). Add a new file tests/test_excutils.py with 3 regression tests: (1) direct wrapping of a stored exception outside any handler; (2) chained wrapping (wrap a wrapper, outside a handler); (3) wrapping a stored exception while an unrelated exception is being handled. Each asserts str() and get_str() do not raise and contain the cause formatting, e.g. 'caused by ValueError: x' when no message, and 'msg (caused by ValueError: x)' with a message, and no 'Traceback' text.",
+      "spec_ref": "Currently ExceptionCauseMixin.__new__ (boltons/excutils.py) sets self.full_trace only when the cause already has full_trace, or when sys.exc_info() value is the cause or root_cause. Otherwise the attribute is never set, and _get_trace_str does `if self.full_trace:` -> AttributeError. New behavior: absent trace is treated as empty. Add class attribute `full_trace = None` next to `cause = None` (keep it None, not [], because __new__ uses `getattr(cause,'full_trace',None) is not None` to decide to copy _tb/_stack). _get_trace_str returns '' when no trace, so __str__ returns _get_exc_str(incl_name=False) i.e. 'msg (caused by ValueError: x)' or ' caused by ValueError: x' (leading space, existing formatting) and get_str() returns 'ClassName: ...' with no 'Traceback' header. Existing formatting is otherwise unchanged. Example class: class MyExc(ExceptionCauseMixin, Exception): pass. Test cmd: python -m pytest -q tests/test_excutils.py",
+      "file_scope": [
+        "boltons/excutils.py",
+        "tests/test_excutils.py"
+      ],
+      "blocked_by": [],
+      "test_cmd": "python -m pytest -q tests/test_excutils.py --doctest-modules boltons/excutils.py",
+      "may_change_tests": [],
+      "claim_probes": []
+    }
+  ],
+  "claim_check": []
+}

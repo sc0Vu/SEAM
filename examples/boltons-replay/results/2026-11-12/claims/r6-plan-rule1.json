@@ -1,0 +1,91 @@
+{
+  "goal": "boltons-fixes-484-518-485-539-504-573-557",
+  "goal_text": "Fix the following problems in boltons, as described by contributors. Add or update tests for each fix.\n\n### Preserve empty permission fields in FilePerms.from_int (boltons#484)\n\n`FilePerms.from_int()` drops leading empty permission groups, shifting group/other permissions into a different class:\n\n```python\n>>> perms = FilePerms.from_int(0o007)\n>>> repr(perms)\n\"FilePerms(user='rwx', group='', other='')\"\n>>> oct(int(perms))\n'0o700'\n```\n\nThe same problem affects `from_path()`, which delegates to `from_int()`. Reading a file's mode and passing `int(perms)` back to `os.chmod` can therefore change its permission classes.\n\nRead exactly three groups instead of stopping when the remaining integer becomes zero. The existing lower-nine-bit mask is unchanged. Add roundtrip coverage for all 512 standard modes plus special-bit/file-type/negative inputs to retain existing masking behavior.\n\nValidation on macOS, CPython 3.12.13:\n- Before: 65 of 516 roundtrip cases fail.\n- After: 1,188 tests and doctests pass (`python -m pytest --doctest-modules boltons tests -q`).\n- Real-file `from_path`/`chmod` roundtrips preserve `0o000`, `0o007`, `0o070`, `0o077`, `0o644`, and `0o777`.\n- Toggling original/patched/original code on a real file reproduces `0o007 \u2192 0o700`, preserves `0o007`, and reproduces the failure again.\n\nIndependent of #482 (setter updates) and #483 (rotation). AI assistance was used to prepare the patch and tests; runtime behavior was verified locally. Windows and the Python 3.7 runtime were not tested locally.\n\n### fileutils: fix FilePerms silently keeping revoked permission bits (boltons#518)\n\n`FilePerms._FilePermProperty._update_integer` only ever OR's new bits into `_integer`. Narrowing a field (e.g. `fp.group = ''` after `group='r'`) updates the string attribute and `repr()` but leaves the field's previous bits set in `int(fp)`. So `os.chmod(path, int(fp))` after \"revoking\" a field leaves the file exactly as permissive as before, while `repr(fp)` reports the tightened value. Fixes #480.\n\nThe fix clears the field's 3-bit slot before OR-ing in the new value, so the integer always matches what the attributes say.\n\n### Fix iter_find_files depth with trailing path separators (boltons#485)\n\nA trailing path separator changes the results of iter_find_files when max_depth is set. With root.txt in a directory and child/child.txt below it, max_depth=0 correctly returns only root.txt for the directory path, but also returns child.txt when the same path ends in a separator. Multiple trailing separators let still deeper files through.\n\nThe depth calculation subtracts counts of separator-delimited components. Trailing empty components in the initial directory inflate the starting depth. Calculate depth from os.path.relpath(root, directory) instead, so equivalent directory spellings have the same limit.\n\nThe regression test builds a real three-level temporary tree and checks max_depth=0 and 1 with zero, one, and two trailing separators. It fails before the fix and passes after it.\n\nValidation on macOS, Python 3.12.13:\n- python -m pytest --doctest-modules boltons tests -q: 673 passed.\n- git diff --check passed.\n\n### Clean up AtomicSaver after finalization failures (boltons#539)\n\n`AtomicSaver.__exit__` flushes and syncs its part file before entering its cleanup handling. If either operation raises, the stream remains open and the part file is left behind even with the default `rm_part_on_exc=True`. A close failure also bypasses cleanup.\n\nAlways attempt to close the part file, and use one conditional cleanup path for finalization and rename failures as well as context-body exceptions. Flush/sync/close failures must not reach the rename step. Preserve the successful flush/sync/close/rename order, `rm_part_on_exc=False` for recovery, and the triggering exception when cleanup unlink fails.\n\nThis change does not address setup failures or change the existing precedence when both the context body and finalization raise. It attempts closing; if the OS itself fails to close a descriptor, this cannot guarantee actual closure. The existing Unix `overwrite=False` link-then-unlink rename behavior is unchanged, including the possibility that the target link already exists if the later unlink fails.\n\n### Shrink paths correctly when the user home is a filesystem root (boltons#504)\n\n`shrinkuser` now recognizes child paths when the home directory is a filesystem root. With home `/`, `/project/file` previously stayed unchanged because the code expected an additional separator after the home prefix. It now becomes `~/project/file`; custom home markers work too, while sibling paths remain untouched.\n\nThe root-home regression fails before the change. All 673 tests and module doctests pass on Python 3.11.15, including the existing sibling-prefix and ordinary-home cases.\n\n### Validate Python identifiers before generating named records (boltons#573)\n\n`namedtuple` and `namedlist` accept Unicode alphanumeric characters that Python cannot use in an identifier, such as the superscript in `value\u00b2`. Invalid names reach the generated source and raise `SyntaxError`; `rename=True` fails rather than producing a valid field name.\n\nCheck Python identifier validity alongside the existing character checks before generation and during renaming. Add 12 regressions for both factories, invalid type/field names, and successful renaming with a valid Greek field as a control.\n\nValidation: all 12 new regressions fail against unchanged master; the full suite passes after the fix (537 tests and 12 subtests). The five warnings are existing Python 3.14 deprecations in unrelated tests.\n\nReview follow-up: Python treats NFKC-equivalent field spellings as the same identifier. Duplicate checks now compare their normalized forms. For both factories, `[\"K\", \"\u212a\"]` and `[\"a\", \"\uff41\"]` raise `ValueError` without renaming and produce an instantiable record with `rename=True`. Both input orders are covered, and the first field retains its original spelling.\n\nValidation for the follow-up: all 16 new regressions fail with `SyntaxError` before this update. Python 3.14.8 passes the complete suite with doctests (706 tests, five existing deprecation warnings). Python 3.11.14 passes all 37 named-record tests. `git diff --check` passes.\n\n### Include documentation sources in source distributions (boltons#557)\n\nThe flit sdist configuration names `doc/`, but the documentation lives in `docs/`. Source distributions therefore omit all documentation sources. Include the actual directory and exclude its generated `_build` output.\n\nValidation: built sdists before and after. The original archive contains zero docs files; the corrected archive includes `docs/conf.py`, `docs/index.rst` and the other documentation sources. A temporary file in `docs/_build/` remained excluded. Tests remain included. This is the current flit configuration, separate from the earlier setup.py fix in #353.\n\nThe full test suite (python -m pytest -q --doctest-modules boltons tests) must stay green.",
+  "planner_notes": "Tasks fileutils_perms, fileutils_depth, fileutils_atomic all edit boltons/fileutils.py and tests/test_fileutils.py, so their scopes overlap and they run serially (no functional dependency between them). Other tasks touch disjoint files: pathutils (shrinkuser), namedutils (namedtuple/namedlist), pyproject.toml. Risk: namedutils is imported elsewhere; keep public behavior unchanged apart from stricter validation.",
+  "tasks": [
+    {
+      "key": "fileutils_perms",
+      "type": "backend",
+      "description": "In boltons/fileutils.py fix FilePerms: (1) #484 from_int must read exactly three 3-bit groups (user, group, other) from the lower nine bits (i & 0o777 masking unchanged) instead of stopping when the remaining integer becomes zero, so FilePerms.from_int(0o007) gives user='', group='', other='rwx' and int() == 0o007; from_path delegates to from_int and is fixed too. Negative ints, special bits (setuid etc.) and file-type bits (e.g. 0o100644) must still be masked to the lower nine bits. (2) #518 _FilePermProperty._update_integer must clear the field's 3-bit slot in _integer before OR-ing in the new value, so e.g. after fp.group='r' then fp.group='' int(fp) no longer contains group bits. Add tests in tests/test_fileutils.py: roundtrip int(FilePerms.from_int(m)) == m for all m in range(512), masking cases (special bits, file type bits, negative), a from_path/chmod roundtrip on tmp_path for 0o000,0o007,0o070,0o077,0o644,0o777, and setter-narrowing tests.",
+      "spec_ref": "FilePerms.from_int(i): masks i to lower nine bits, always parses three groups user/group/other, leading empty groups preserved. int(FilePerms) always equals the bits implied by the user/group/other attributes; assigning a narrower value to any field clears its previously set bits.",
+      "file_scope": [
+        "boltons/fileutils.py",
+        "tests/test_fileutils.py"
+      ],
+      "blocked_by": [],
+      "test_cmd": "python -m pytest -q --doctest-modules boltons/fileutils.py tests/test_fileutils.py",
+      "may_change_tests": [],
+      "claim_probes": []
+    },
+    {
+      "key": "fileutils_depth",
+      "type": "backend",
+      "description": "In boltons/fileutils.py fix iter_find_files(directory, patterns, ignored=None, include_dirs=False, max_depth=None) (#485): the depth calculation currently subtracts counts of separator-delimited components, so trailing path separators on `directory` inflate the start depth and let deeper files through. Compute depth from os.path.relpath(root, directory) (depth 0 for root itself, otherwise number of components) so equivalent spellings of the directory give identical results. Add a regression test in tests/test_fileutils.py building a real tmp_path tree: dir/root.txt, dir/child/child.txt, and a third level dir/child/grand/grand.txt; assert max_depth=0 and 1 with zero, one and two trailing os.sep appended to the directory yield the same results (max_depth=0 -> only root.txt).",
+      "spec_ref": "iter_find_files results with max_depth must be identical for directory, directory+os.sep, directory+os.sep*2. max_depth=0 returns only files directly in directory; max_depth=1 also one level below. Behavior with max_depth=None unchanged.",
+      "file_scope": [
+        "boltons/fileutils.py",
+        "tests/test_fileutils.py"
+      ],
+      "blocked_by": [],
+      "test_cmd": "python -m pytest -q --doctest-modules boltons/fileutils.py tests/test_fileutils.py",
+      "may_change_tests": [],
+      "claim_probes": []
+    },
+    {
+      "key": "fileutils_atomic",
+      "type": "backend",
+      "description": "In boltons/fileutils.py fix AtomicSaver.__exit__ (#539). Currently flush and fsync happen before the cleanup try-block, so if either raises the part file stays open and is left behind, and a close failure bypasses cleanup. New behavior: always attempt to close the part file; use one conditional cleanup path (unlink the part file when rm_part_on_exc is True) for context-body exceptions, flush/sync/close failures, and rename failures. If flush, fsync or close raises, the rename step must NOT run. Successful order stays flush, sync, close, rename. rm_part_on_exc=False leaves the part file for recovery. If the cleanup unlink itself fails, the triggering exception still propagates (unlink error swallowed). Do not change setup (__enter__) failure handling, nor precedence when both body and finalization raise, nor the Unix overwrite=False link-then-unlink rename behavior. Add tests in tests/test_fileutils.py using monkeypatching/mocks to inject failures in flush, os.fsync, close and rename, asserting part file removal, no rename after flush/sync/close failure, rm_part_on_exc=False retention, and exception propagation when unlink fails.",
+      "spec_ref": "AtomicSaver.__exit__(exc_type, exc_val, exc_tb): closes part file always; on any exception from body, flush, fsync, close or rename removes part file if rm_part_on_exc else keeps it; original triggering exception propagates.",
+      "file_scope": [
+        "boltons/fileutils.py",
+        "tests/test_fileutils.py"
+      ],
+      "blocked_by": [],
+      "test_cmd": "python -m pytest -q --doctest-modules boltons/fileutils.py tests/test_fileutils.py",
+      "may_change_tests": [],
+      "claim_probes": []
+    },
+    {
+      "key": "shrinkuser_root",
+      "type": "backend",
+      "description": "In boltons/pathutils.py fix shrinkuser(path, home='~') (#504): when the user home directory is a filesystem root (e.g. '/'), child paths must be shrunk: with home dir '/', '/project/file' -> '~/project/file'; custom home marker works (home='$H' -> '$H/project/file'). Sibling paths that merely share a string prefix with a non-root home (e.g. home '/home/u', path '/home/user2/x') must remain unchanged, and ordinary-home behavior unchanged. Read the function first and handle the separator logic (don't require an extra separator after a prefix that already ends in a separator). Add tests in tests/test_pathutils.py (create or extend; mock the home lookup e.g. via monkeypatching os.path.expanduser or HOME env as existing tests do).",
+      "spec_ref": "shrinkuser(path, home='~'): replaces leading user-home directory with `home` marker only when path equals home dir or is a child of it; root home '/' makes '/a/b' -> '~/a/b'.",
+      "file_scope": [
+        "boltons/pathutils.py",
+        "tests/test_pathutils.py"
+      ],
+      "blocked_by": [],
+      "test_cmd": "python -m pytest -q --doctest-modules boltons/pathutils.py tests/test_pathutils.py",
+      "may_change_tests": [],
+      "claim_probes": []
+    },
+    {
+      "key": "namedutils_identifiers",
+      "type": "backend",
+      "description": "In boltons/namedutils.py fix namedtuple and namedlist (#573). Currently the checks use c.isalnum() or '_' so names like 'value\u00b2' pass and generate source that raises SyntaxError. Add str.isidentifier() validity checks alongside existing character checks for type name and field names (both factories, at lines ~154,163,313,322), and in the rename=True path so invalid field names are renamed to _<index>. Python treats NFKC-equivalent spellings as the same identifier: duplicate detection must compare unicodedata.normalize('NFKC', name) forms; ['K','K'] (Kelvin sign) and ['a','\uff41'] raise ValueError when rename=False, and with rename=True yield an instantiable record where the first field keeps its original spelling and the later duplicate is renamed (both input orders). Invalid type name or field name (e.g. 'value\u00b2') raises ValueError without rename; rename=True renames it to valid name; a valid Greek field (e.g. '\u03b1') works. Add ~16 tests in tests/test_namedutils.py covering both factories.",
+      "spec_ref": "namedtuple/namedlist(typename, field_names, verbose=False, rename=False): ValueError for non-identifier type/field names and NFKC-duplicate field names unless rename=True, in which case offending fields become '_<index>'. Never raise SyntaxError.",
+      "file_scope": [
+        "boltons/namedutils.py",
+        "tests/test_namedutils.py"
+      ],
+      "blocked_by": [],
+      "test_cmd": "python -m pytest -q --doctest-modules boltons/namedutils.py tests/test_namedutils.py",
+      "may_change_tests": [],
+      "claim_probes": []
+    },
+    {
+      "key": "flit_sdist_docs",
+      "type": "devops",
+      "description": "In pyproject.toml [tool.flit.sdist] (#557) change include entry \"doc/\" to \"docs/\" and exclude \"doc/_build\" to \"docs/_build\" (docs sources live in docs/). Keep tests/, CHANGELOG.md, tox.ini entries.",
+      "spec_ref": "[tool.flit.sdist] include = [\"docs/\", \"tests/\", \"CHANGELOG.md\", \"tox.ini\"]; exclude = [\"docs/_build\"].",
+      "file_scope": [
+        "pyproject.toml"
+      ],
+      "blocked_by": [],
+      "test_cmd": "python -c \"import tomllib;d=tomllib.load(open('pyproject.toml','rb'))['tool']['flit']['sdist'];assert 'docs/' in d['include'] and d['exclude']==['docs/_build']\"",
+      "may_change_tests": [],
+      "claim_probes": []
+    }
+  ],
+  "claim_check": []
+}

@@ -772,6 +772,28 @@ both v1 cases passed; they have, §8.)
   any existing test the task must rewrite because it deliberately changes behavior
   (§2, existing-test guard), and read the code before calling a behavior "existing".
 - *Cost* is capped by `plan --budget-usd` and reported with the plan.
+- *Claims about current behavior are checked* (`seam_merge/coordinator/claims.py`).
+  Constraint served: invariant 6's reviewer checks a diff against the contract, so a
+  false contract is enforced, not caught (§12 replay, r3). Each task carries
+  `claim_probes`: one small pytest file per statement its `spec_ref` makes about how
+  the code behaves today. `seam plan` runs them right after planning, on the same
+  untouched snapshot, in the sandbox with no network, and writes the outcome into the
+  plan (`claim_check`) and onto the terminal. On the original code a failing probe
+  means the claim or the probe is wrong; either way the human reads it at the plan
+  checkpoint. Probes are parsed on the host, never run there; invalid ones are
+  reported unrun. The check reports, it does not rewrite or block: the plan is for
+  the human to fix.
+  *Measured* by re-planning the 7 replay goals from their starting commits
+  (`examples/boltons-replay/results/2026-11-12/claims/`). First rule ("probe each
+  claim"): 5 probes on 3 of 16 tasks, all hold, so coverage was the problem. Second
+  rule (words like "existing", "unchanged", "still" are claims; probe each): 17
+  probes on 7 of 13 tasks, 14 hold, 3 fail. One is a true catch, and it is r1's trap:
+  the plan again required that a wrapped cause render inside its handler, and the
+  probe shows that under pytest it raises `TypeError` (the `_DeferredLine` edge case
+  that caused r1's false escalation), now visible before any worker runs. Two are
+  bad probes (they wrote `str` to `AtomicSaver`, which opens in binary mode); the
+  error says so, but they are false alarms. 6 of 13 tasks still carry no probe.
+  Planning the 7 goals cost $0.34 (first rule) and $0.38 (second), vs $0.24 without probes.
 
 **Built:** `seam_merge/coordinator/planner.py` (`Planner`, `PlanDraft`, `PlannerFailed`),
 `seam_merge/coordinator/lead.py:plan_from_dict` (the shared validation), `seam_merge/planners/claude_code.py`

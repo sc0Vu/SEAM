@@ -88,6 +88,13 @@ def plan_from_dict(data: object) -> Plan:
                 isinstance(x, str) and "::" in x and x.split("::")[-1] for x in allowed):
             raise PlanError(f"task {t['key']!r}: may_change_tests must be a list of "
                             "test ids like 'tests/test_x.py::test_name'")
+        probes = t.get("claim_probes", [])
+        names = [p.get("name") for p in probes if isinstance(p, dict)]
+        if not isinstance(probes, list) or len(names) != len(probes) or not all(
+                isinstance(n, str) and n and isinstance(p.get("code"), str)
+                for n, p in zip(names, probes, strict=True)) or len(set(names)) != len(names):
+            raise PlanError(f"task {t['key']!r}: claim_probes must be a list of "
+                            "{name, code} with unique names")
     return Plan(goal=goal, tasks=_topological(tasks))
 
 

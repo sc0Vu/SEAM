@@ -17,6 +17,7 @@ from pathlib import Path
 
 from seam_merge import __version__
 from seam_merge.coordinator import escalation
+from seam_merge.coordinator.claims import check_claims
 from seam_merge.coordinator.lead import Budget, Lead, goal_budget, load_plan
 from seam_merge.engine.errors import SeamError
 from seam_merge.engine.git import GitRepo, Identity
@@ -168,8 +169,12 @@ def cmd_plan(args: argparse.Namespace) -> None:
             planner = ClaudeCodePlanner(box, model=args.model, max_budget_usd=args.budget_usd)
             print(f"planning on {args.repo}@{args.target} (cap ${args.budget_usd:.2f})")
             draft = planner.plan(args.goal, Path(d))
+        # The plan's claims about today's code, checked on that same untouched code
+        # in the sandbox with no network (doc §12).
+        claims = check_claims(draft.plan.tasks, Path(d), DockerSandbox(args.image,
+                                                                       user=host_user()))
     _report_proxy(proxy)
-    out.write_text(plan_to_json(draft, args.goal))
+    out.write_text(plan_to_json(draft, args.goal, claims))
     by_key = {t["key"]: t for t in draft.plan.tasks}
     for t in draft.plan.tasks:
         deps = f"  after {t.get('blocked_by')}" if t.get("blocked_by") else ""
@@ -179,9 +184,25 @@ def cmd_plan(args: argparse.Namespace) -> None:
     if overlaps:
         print(f"  overlapping scopes (will run one at a time): {overlaps}")
     print(f"\nplanner notes: {draft.notes}")
+    _print_claims(claims)
     usage = format_usage(draft.usage) if draft.usage else "n/a"
     print(f"\nwrote {out}  (${draft.cost_usd:.2f}; {usage})")
     print(f"review it, then: seam run --repo {args.repo} --plan {out} ...")
+
+
+def _print_claims(claims) -> None:
+    """The claim check, loudly when a claim failed: the human must read it before run."""
+    if not claims:
+        print("\nclaims about current behavior: none probed")
+        return
+    held = sum(c.outcome == "holds" for c in claims)
+    print(f"\nclaims about current behavior: {held}/{len(claims)} hold")
+    for c in claims:
+        if c.outcome != "holds":
+            print(f"  WARNING {c.outcome.upper()}: {c.task}/{c.name}: {c.detail}")
+    if held < len(claims):
+        print("  A false claim becomes a wrong contract that review enforces: fix the "
+              "plan's spec_ref (or the probe) before running it.")
 
 
 def identity(text: str) -> Identity:

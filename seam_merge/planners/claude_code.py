@@ -41,9 +41,13 @@ PLAN_SCHEMA = {
                     "blocked_by": {"type": "array", "items": {"type": "string"}},
                     "test_cmd": {"type": "string"},
                     "may_change_tests": {"type": "array", "items": {"type": "string"}},
+                    "claim_probes": {"type": "array", "items": {
+                        "type": "object",
+                        "properties": {"name": {"type": "string"}, "code": {"type": "string"}},
+                        "required": ["name", "code"]}},
                 },
                 "required": ["key", "type", "description", "spec_ref", "file_scope",
-                             "blocked_by", "test_cmd", "may_change_tests"],
+                             "blocked_by", "test_cmd", "may_change_tests", "claim_probes"],
             },
         },
     },
@@ -83,6 +87,14 @@ Rules:
   assertions or new tests is always fine); a rewrite of any test not listed is
   rejected. Before calling a behavior "existing" or "unchanged" in spec_ref, read the
   code that implements it: a wrong claim there becomes a wrong contract.
+- claim_probes: for each statement in spec_ref about how the code behaves TODAY
+  (existing or unchanged behavior; not the new behavior the task adds), one small
+  self-contained pytest file asserting it: {{"name": short_snake_case, "code": "..."}}.
+  They run on the current, unmodified code before any work starts, from the
+  repository root, offline, with pytest's tmp_path available; a failing probe means
+  the claim is false. Keep each to one claim. Words like "existing", "unchanged",
+  "still", "keep", "preserve" or "currently" in spec_ref are claims: probe each one.
+  Leave it empty only when spec_ref says nothing about how the code behaves today.
 - Do not split work that does not genuinely divide: one indivisible feature is one
   task. Fewer, well-scoped tasks beat many tiny ones.
 - key: short snake_case, unique. type: "backend" unless clearly another kind.
@@ -148,9 +160,11 @@ class ClaudeCodePlanner:
         return PlanDraft(plan=plan, notes=notes, cost_usd=cost, usage=usage_from_result(data))
 
 
-def plan_to_json(draft: PlanDraft, goal_text: str) -> str:
-    """The draft as a plan file `load_plan` reads back, with the goal text and the
-    planner's notes kept alongside for the human who reviews it."""
-    return json.dumps({"goal": draft.plan.goal, "goal_text": goal_text,
-                       "planner_notes": draft.notes, "tasks": draft.plan.tasks},
-                      indent=2) + "\n"
+def plan_to_json(draft: PlanDraft, goal_text: str, claims: list | None = None) -> str:
+    """The draft as a plan file `load_plan` reads back, with the goal text, the
+    planner's notes and the claim check kept alongside for the human who reviews it."""
+    out = {"goal": draft.plan.goal, "goal_text": goal_text,
+           "planner_notes": draft.notes, "tasks": draft.plan.tasks}
+    if claims is not None:
+        out["claim_check"] = [vars(c) for c in claims]
+    return json.dumps(out, indent=2) + "\n"

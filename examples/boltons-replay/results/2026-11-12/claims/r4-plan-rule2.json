@@ -1,0 +1,65 @@
+{
+  "goal": "stats-mode-cache-histogram-fixes",
+  "goal_text": "Fix the following problems in boltons, as described by contributors. Add or update tests for each fix.\n\n### Keep Stats.mode tie-breaking stable after sorted measures (boltons#534)\n\n`Stats.mode` breaks ties by first appearance, but computing a sorted statistic first can change the answer:\n\n```python\ns = Stats([2, 1, 2, 1])\ns.median  # 1.5\ns.mode    # currently 1; should be 2\n```\n\nWith the default `use_copy=True`, lazy sorting reorders `self.data` before `mode` counts it. The fix keeps that data in its original order and caches a separate sorted view. `clear_cache()` discards the view, and `median_abs_dev` reuses it. No-copy and presorted behavior stay unchanged; trimming still replaces the data and clears the caches.\n\nThe sorted view retains an additional list of references after first use, without copying the numeric objects. This avoids repeatedly sorting the original data. Callers modifying `stats.data` must call `clear_cache()`, as documented; this now also applies to uncached quantile queries on copied data.\n\nTests cover call order, cache refresh, trimming, no-copy and presorted inputs, and unhashable numeric values:\n\n- The test file with the new cases on unchanged master: 8 failed, 19 passed.\n- Affected tests and doctests with the fix: 48 passed.\n- Full tests and doctests: 700 passed on both Python 3.12 and 3.14.\n- The repository's `tox -e py314` environment: 700 passed. Other tox environments were not run.\n\n### Invalidate the presorted hint when clearing Stats caches (boltons#570)\n\n`Stats.clear_cache()` now discards the `is_sorted` hint as well as cached measures. Its documented use after modifying `Stats.data` could otherwise recompute incorrect values from an order that no longer holds:\n\n```python\nstats = Stats([1, 2, 3], is_sorted=True)\nstats.data.append(0)\nstats.clear_cache()\n(stats.min, stats.max, stats.median)  # before: (1, 0, 2.5); expected: (0, 3, 1.5)\n```\n\nReset the hint when clearing the cache, document that behavior, and cover repeated mutations with both copy modes. The `is_sorted=True` optimization remains available until the caller invalidates the cache.\n\nThe regression failed on master. After the fix, `python -m pytest --doctest-modules boltons tests -q` passed: 679 tests and 12 subtests on Python 3.12/Linux. Other platforms were not run locally.\n\nRelated #534 preserves mode tie-breaking while computing sorted measures. That PR leaves `_is_sorted` set after `clear_cache()` too, so it does not fix this presorted-input mutation case. This change does not alter mode tie-breaking or introduce a sorted-data cache. Open/closed searches for `clear_cache`, `is_sorted`, and Stats cache found no matching fix.\n\n### Fix histogram formatting for zero counts (boltons#529)\n\n`Stats([]).format_histogram()` raises `ZeroDivisionError`, even though histogram counting returns a valid zero-count bin. Passing all-zero counts directly to `format_histogram_counts()` also fails.\n\nSet the bar scale to zero when all counts are zero, retaining the existing `|` marker. For example, `Stats([]).format_histogram(width=20)` now returns `0.0: 0 |`.\n\nThe tests cover empty datasets with default and explicit bin counts, single and multiple zero-count bins, and a mixed-count control. Normal histogram output is unchanged.\n\nValidation on Windows with Python 3.12.13:\n\n- Before the fix, the new tests produced 5 division-by-zero failures and 1 passing control.\n- The full test suite, including doctests, passed: 684 tests and 12 subtests.\n- The source distribution and wheel built successfully with `uv build`.\n- After installing the wheel, the full suite passed against the installed package from outside the checkout: 684 tests and 12 subtests.\n- `git diff --check` passed.\n- A separate Codex agent reviewed the diff and found no actionable issues. It did not rerun tests.\n\nFull-suite command:\n\n```bash\npython -B -m pytest -q -p no:cacheprovider --doctest-modules boltons tests\n```\n\nThe GitHub Actions matrix has not run. Other Python versions and operating systems have not been tested.\n\nThe full test suite (python -m pytest -q --doctest-modules boltons tests) must stay green.",
+  "planner_notes": "All three fixes touch boltons/statsutils.py (Stats sorting/cache state and format_histogram_counts) and its tests, so they cannot run in parallel without overlapping scopes; one task avoids conflicts, since #534 and #570 both change _get_sorted_data/clear_cache. Risk: other modules importing statsutils (e.g. docs/doctests) \u2013 full suite must stay green.",
+  "tasks": [
+    {
+      "key": "stats_fixes",
+      "type": "backend",
+      "description": "In boltons/statsutils.py fix three issues and add tests (new tests in tests/test_statsutils.py and tests/test_statsutils_histogram.py; do not rewrite existing tests).\n\n(1) boltons#534: Stats.mode tie-breaking must not change after sorted measures. With use_copy=True and not is_sorted, _get_sorted_data currently does self.data.sort() in place. Change it to keep self.data in original order and build/cache a separate sorted list (e.g. self._sorted_data, a sorted(self.data) list of references) on first use. clear_cache() discards that view; _calc_median_abs_dev reuses the cached sorted view (via _get_sorted_data) instead of its own sorted(self.data) when use_copy is True. use_copy=False keeps returning a fresh sorted(self.data) each call (no caching). is_sorted=True keeps returning self.data itself. trim_relative still replaces self.data and clears the caches (including the sorted view). Example: s=Stats([2,1,2,1]); s.median==1.5; s.mode==2. Must work for unhashable numeric values for sorted measures (no hashing in sorting path). Document in clear_cache that callers modifying stats.data must call it, which now also applies to quantile queries on copied data.\n\n(2) boltons#570: Stats.clear_cache() must also reset self._is_sorted = False (and drop the sorted view), and its docstring must say so. Example: stats=Stats([1,2,3], is_sorted=True); stats.data.append(0); stats.clear_cache(); (stats.min, stats.max, stats.median)==(0,3,1.5). Test repeated mutations with both use_copy=True and False. Before clear_cache is called, is_sorted=True optimization remains (min/max use data[0]/data[-1]).\n\n(3) boltons#529: in format_histogram_counts, when count_max is 0 (all counts zero) set line_k = 0.0 instead of dividing; bars stay '|' (existing fallback). Stats([]).format_histogram(width=20) returns '0.0: 0 |'. Tests: empty dataset with default and explicit bins, single and multiple zero-count bins passed directly to format_histogram_counts, and a mixed-count control with unchanged output.\n\nTests for #534 cover: call order (median before mode, mode before median), cache refresh after clear_cache, trimming, use_copy=False and is_sorted=True inputs, unhashable numeric values (e.g. a float subclass/number class with __hash__ = None) with sorted measures.",
+      "spec_ref": "Stats._get_sorted_data(): if not use_copy -> sorted(self.data) (fresh each call); elif is_sorted -> self.data; else cached sorted list (new attribute, built lazily from self.data without mutating it, discarded by clear_cache). Stats.clear_cache(): deletes cached measures, the sorted view, and sets _is_sorted=False. Stats.mode returns first-appearing among ties in original data order regardless of prior median/quantile/etc calls. median_abs_dev uses the sorted view. format_histogram_counts: if max count is 0, bar scale is 0 so every bar renders as '|'; no ZeroDivisionError. Stats([]).format_histogram(width=20) == '0.0: 0 |'. Today's behavior retained: mode ties go to first appearance in data on a fresh Stats; use_copy=False never mutates the caller's list when computing median; trim_relative replaces self.data.",
+      "file_scope": [
+        "boltons/statsutils.py",
+        "tests/test_statsutils.py",
+        "tests/test_statsutils_histogram.py"
+      ],
+      "blocked_by": [],
+      "test_cmd": "python -m pytest -q --doctest-modules boltons/statsutils.py tests/test_statsutils.py tests/test_statsutils_histogram.py",
+      "may_change_tests": [],
+      "claim_probes": [
+        {
+          "name": "mode_tie_first_appearance",
+          "code": "from boltons.statsutils import Stats\n\ndef test_mode_tie():\n    assert Stats([2, 1, 2, 1]).mode == 2\n    assert Stats([1, 2, 2, 1]).mode == 1\n"
+        },
+        {
+          "name": "no_copy_median_does_not_mutate",
+          "code": "from boltons.statsutils import Stats\n\ndef test_no_copy():\n    d = [3, 1, 2]\n    s = Stats(d, use_copy=False)\n    assert s.median == 2\n    assert d == [3, 1, 2]\n"
+        },
+        {
+          "name": "trim_relative_replaces_data",
+          "code": "from boltons.statsutils import Stats\n\ndef test_trim():\n    s = Stats(list(range(10)))\n    s.trim_relative(0.2)\n    assert s.data == [2, 3, 4, 5, 6, 7]\n"
+        },
+        {
+          "name": "presorted_min_max_use_ends",
+          "code": "from boltons.statsutils import Stats\n\ndef test_presorted():\n    s = Stats([1, 2, 3], is_sorted=True)\n    assert (s.min, s.max, s.median) == (1, 3, 2)\n"
+        }
+      ]
+    }
+  ],
+  "claim_check": [
+    {
+      "task": "stats_fixes",
+      "name": "mode_tie_first_appearance",
+      "outcome": "holds",
+      "detail": ""
+    },
+    {
+      "task": "stats_fixes",
+      "name": "no_copy_median_does_not_mutate",
+      "outcome": "holds",
+      "detail": ""
+    },
+    {
+      "task": "stats_fixes",
+      "name": "trim_relative_replaces_data",
+      "outcome": "holds",
+      "detail": ""
+    },
+    {
+      "task": "stats_fixes",
+      "name": "presorted_min_max_use_ends",
+      "outcome": "holds",
+      "detail": ""
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "goal": "rotate-file-keep-generations",
+  "goal_text": "Fix the following problems in boltons, as described by contributors. Add or update tests for each fix.\n\n### Keep the requested number of rotated file generations (boltons#483)\n\n`rotate_file(path, keep=1)` currently deletes the backup it just created, leaving no copy of the file. For larger values it retains `keep - 1` generations instead of the requested count.\n\nRemove the oldest generation before the descending rename sequence. This lets the new last generation survive. Update the two full-rotation tests to verify all five retained contents (including replacement of a pre-existing fifth backup), and add repeated-rotation tests for `keep=1`, `2`, and `5`, with and without extensions.\n\nFixes #479.\n\nValidation:\n- Before: 8 fileutils scenarios fail; `keep=1` leaves an empty directory.\n- After: 678 tests and doctests pass (`python -m pytest --doctest-modules boltons tests -q`).\n- Actual temporary files preserve the latest backup, replace the oldest on subsequent rotations, and remain unchanged when the source is missing or `keep=0` is rejected.\n- Full suite tested locally on macOS with CPython 3.12.13; focused review tests also passed on Python 3.14. Windows was not tested.\n\nThis branch is independent of #482. AI assistance was used for implementation and tests; before/after filesystem behavior was verified locally.\n\nThe full test suite (python -m pytest -q --doctest-modules boltons tests) must stay green.",
+  "planner_notes": "Single indivisible fix in boltons/fileutils.py plus tests in tests/test_fileutils.py; no parallelism. Risk: the two full-rotation tests currently assert the buggy behavior (no .5 file), so they are listed in may_change_tests. Other code importing rotate_file is unaffected by the signature (unchanged).",
+  "tasks": [
+    {
+      "key": "fix_rotate_keep",
+      "type": "backend",
+      "description": "In boltons/fileutils.py, fix rotate_file so exactly `keep` backup generations are retained. Currently the function renames the chain and then removes kept_names[-1] at the end (lines ~727-728), which deletes the newest-shifted backup at the last slot (for keep=1 it deletes the only backup). Fix: after the validation (keep<1 ValueError, missing file returns, non-file ValueError), remove the oldest generation kept_names[-1] if it exists BEFORE the descending rename loop, and delete the trailing removal after the loop. Update docstring if needed. Tests in tests/test_fileutils.py: rewrite test_rotate_file_full_rotation and test_rotate_file_full_rotation_no_ext so the source plus backups .1-.4 exist, plus a pre-existing .5 backup with distinct content ('test content 5'); after rotate_file(keep=5) assert source gone, and .1..5 contents are 'test content 0'..'test content 4' (old .5 replaced). Add new repeated-rotation tests for keep=1, 2, and 5, each with and without extension: repeatedly write new content to the file, rotate, and assert that exactly the latest `keep` generations exist with correct contents (.1 newest) and no .{keep+1} file. Also add tests that a missing source leaves the directory unchanged and keep=0 raises ValueError leaving files unchanged.",
+      "spec_ref": "rotate_file(filename, *, keep: int = 5): if keep < 1 raise ValueError('expected \"keep\" to be >=1, not {keep}'); if filename does not exist return None without changes; if exists but not a file raise ValueError. Otherwise the file is renamed to filename.1[.ext], existing .i become .{i+1}, and the file at .{keep} (the oldest generation) is deleted first so that exactly `keep` backups (.1 .. .{keep}) remain afterwards. Naming: with ext 'root.N.ext', without ext 'root.N'. keep=1 leaves one backup .1 containing the latest content. After rotation the original filename does not exist. Current (buggy) behavior: it renames chain then removes .{keep}, retaining keep-1 generations.",
+      "file_scope": [
+        "boltons/fileutils.py",
+        "tests/test_fileutils.py"
+      ],
+      "blocked_by": [],
+      "test_cmd": "python -m pytest -q --doctest-modules boltons/fileutils.py tests/test_fileutils.py",
+      "may_change_tests": [
+        "tests/test_fileutils.py::test_rotate_file_full_rotation",
+        "tests/test_fileutils.py::test_rotate_file_full_rotation_no_ext"
+      ],
+      "claim_probes": [
+        {
+          "name": "rotate_validation_and_missing",
+          "code": "import pytest\nfrom boltons import fileutils\n\ndef test_probe(tmp_path):\n    p = tmp_path / 'a.txt'\n    assert fileutils.rotate_file(p) is None\n    assert list(tmp_path.iterdir()) == []\n    p.write_text('x')\n    with pytest.raises(ValueError):\n        fileutils.rotate_file(p, keep=0)\n    assert p.read_text() == 'x'\n    d = tmp_path / 'd'\n    d.mkdir()\n    with pytest.raises(ValueError):\n        fileutils.rotate_file(d)\n"
+        },
+        {
+          "name": "rotate_basic_naming",
+          "code": "from boltons import fileutils\n\ndef test_probe(tmp_path):\n    p = tmp_path / 'a.txt'\n    p.write_text('x')\n    fileutils.rotate_file(p, keep=3)\n    assert not p.exists()\n    assert (tmp_path / 'a.1.txt').read_text() == 'x'\n    q = tmp_path / 'b'\n    q.write_text('y')\n    fileutils.rotate_file(q, keep=3)\n    assert (tmp_path / 'b.1').read_text() == 'y'\n"
+        }
+      ]
+    }
+  ],
+  "claim_check": [
+    {
+      "task": "fix_rotate_keep",
+      "name": "rotate_validation_and_missing",
+      "outcome": "holds",
+      "detail": ""
+    },
+    {
+      "task": "fix_rotate_keep",
+      "name": "rotate_basic_naming",
+      "outcome": "holds",
+      "detail": ""
+    }
+  ]
+}
