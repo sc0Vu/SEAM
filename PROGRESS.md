@@ -1,7 +1,7 @@
 # SEAM progress log
 
-Last updated: 2026-11-13. State: released **seam-merge 0.2.2** on PyPI (tag v0.2.2);
-396 tests passing, ruff clean. Design and every measurement: `doc/architecture.md` (§8, §10–§12).
+Last updated: 2026-11-13. State: released **seam-merge 0.2.3** on PyPI (tag v0.2.3);
+399 tests passing, ruff clean. Design and every measurement: `doc/architecture.md` (§8, §10–§12).
 
 ## Done
 
@@ -72,6 +72,9 @@ Last updated: 2026-11-13. State: released **seam-merge 0.2.2** on PyPI (tag v0.2
   Seen on real agent output in greeter case 2 (2026-11-12).
 - Lead refuses to load the same goal twice; scope requests count toward the retry
   bound.
+
+### Release 0.2.3 (2026-11-13)
+- `seam proposals`: a draft goal from workers' proposals.
 
 ### Release 0.2.2 (2026-11-13)
 - Empty repositories: `plan` plans from an empty snapshot; `run` refuses with the one

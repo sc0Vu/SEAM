@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.3 — 2026-11-13
+
+- **`seam proposals [--out goal.txt]`** drafts a goal from the bugs workers set aside
+  instead of fixing them out of scope, each labelled with the task it came from. It
+  only drafts: the text is the workers' own, unverified, and a goal instructs the
+  lead, so read and edit it before `seam plan`. `status` points to it.
+
 ## 0.2.2 — 2026-11-13
 
 - **Empty repositories.** `seam plan` plans a from-scratch goal against an empty
