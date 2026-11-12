@@ -129,10 +129,10 @@ Last updated: 2026-11-12. State: released **seam-merge 0.1.0** on PyPI (tag v0.1
 - `gh` CLI login has expired (`gh auth login`), so CI logs can't be read from here.
 
 ## Next
-0. From the replay: (a) flag diffs that change a pre-existing test's assertions
-   unless the task explicitly authorizes a behavior change; (b) check a plan's
-   "existing behavior" claims against the code; (c) a worker -> lead channel to
-   propose a separate task instead of looping to escalation.
+0. From the replay: (a) DONE 2026-11-12: existing-test guard + `may_change_tests`
+   (r3 rerun merged clean, no regression); (b) check a plan's "existing behavior"
+   claims against the code (only a planner rule so far); (c) a worker -> lead
+   channel to propose a separate task instead of looping to escalation.
 1. Probe adjudication — deferred by owner (2026-11-11).
 2. Planner measurements on goals NOT written by the author (the real test), with a
    silent-defect check; and a goal whose tasks genuinely conflict.
@@ -141,7 +141,7 @@ Last updated: 2026-11-12. State: released **seam-merge 0.1.0** on PyPI (tag v0.1
    args, state dir, repo files or git objects.
 
 ## Spend
-2026-11-12: $0.12 (greeter case 2 over MCP) + $2.91 (replay benchmark, 7 goals).
+2026-11-12: $0.12 (greeter case 2 over MCP) + $2.91 (replay benchmark, 7 goals) + $0.21 (r3 rerun).
 2026-11-11: $1.44 (bench4 planning $0.08 + run $1.36).
 Before: ≈ $6 API-equivalent so far (subscription usage): $2.72 in run records (bench1 $0.67,
 bench2 $1.35, bench3 $0.47, token-measurement runs $0.24), plus ≈ $0.80 of greeter runs

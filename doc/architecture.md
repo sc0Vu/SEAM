@@ -906,6 +906,16 @@ suite's protection. Two gaps follow: nothing verifies a plan's claims about exis
 behavior, and nothing flags a diff that changes a pre-existing test's assertions.
 Seven goals: a data point, not a rate.
 
+*Follow-up, same day.* The second gap is closed by the existing-test guard (§2), and
+the planner now declares `may_change_tests` and is told to read the code before
+calling a behavior existing (§12 rules). r3 rerun from scratch: the new plan states
+the missing-file behavior correctly ("return None doing nothing (existing)") and
+lists exactly the 2 tests the maintainers changed; it merged on the first attempt,
+3/3 target tests, no regression ($0.05 + $0.16). One rerun cannot separate the new
+rule from run-to-run variance; the guard itself is checked offline against r3's
+original rewrite (`tests/test_existing_tests.py`). The first gap, verifying a plan's
+claims, stays open.
+
 ---
 
 ## 13. MCP server (built)
