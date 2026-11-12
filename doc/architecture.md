@@ -768,7 +768,9 @@ both v1 cases passed; they have, §8.)
 - *Planning rules given to the model:* module/directory-level scopes with the tests
   inside them; `blocked_by` for every task that uses another task's new API; a frozen
   contract in `spec_ref` for any shared-interface change; an indivisible feature is one
-  task; report scopes that overlap (they will serialize).
+  task; report scopes that overlap (they will serialize); list in `may_change_tests`
+  any existing test the task must rewrite because it deliberately changes behavior
+  (§2, existing-test guard), and read the code before calling a behavior "existing".
 - *Cost* is capped by `plan --budget-usd` and reported with the plan.
 
 **Built:** `seam_merge/coordinator/planner.py` (`Planner`, `PlanDraft`, `PlannerFailed`),

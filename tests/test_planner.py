@@ -82,3 +82,15 @@ def test_written_plan_round_trips_through_load_plan(tmp_path):
 def test_plan_from_dict_rejects_malformed_input(bad):
     with pytest.raises(PlanError):
         plan_from_dict(bad)
+
+
+def test_planner_declares_which_existing_tests_a_task_may_rewrite(tmp_path):
+    item = PLAN_SCHEMA["properties"]["tasks"]["items"]
+    assert "may_change_tests" in item["required"]
+    draft = json.loads(json.dumps(DRAFT))
+    draft["tasks"][1]["may_change_tests"] = ["tests/test_d.py::test_old"]
+    sb = FakeSandbox(result(structured_output=draft))
+    plan = ClaudeCodePlanner(sb).plan("goal", tmp_path).plan
+    assert {t["key"]: t.get("may_change_tests") for t in plan.tasks}["setlist"] == [
+        "tests/test_d.py::test_old"]
+    assert "may_change_tests:" in ClaudeCodePlanner(sb).command("goal")

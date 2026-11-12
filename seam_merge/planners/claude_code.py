@@ -40,9 +40,10 @@ PLAN_SCHEMA = {
                     "file_scope": {"type": "array", "items": {"type": "string"}, "minItems": 1},
                     "blocked_by": {"type": "array", "items": {"type": "string"}},
                     "test_cmd": {"type": "string"},
+                    "may_change_tests": {"type": "array", "items": {"type": "string"}},
                 },
                 "required": ["key", "type", "description", "spec_ref", "file_scope",
-                             "blocked_by", "test_cmd"],
+                             "blocked_by", "test_cmd", "may_change_tests"],
             },
         },
     },
@@ -76,6 +77,12 @@ Rules:
   the same contract into both tasks' spec_ref.
 - test_cmd: the command that runs this task's own tests from the repository root,
   using the repository's own test setup. Tests run offline.
+- may_change_tests: existing tests, as `path::name` (or `path::Class::name`), that the
+  task must rewrite because it deliberately changes the behavior they assert. Usually
+  empty. Every other existing test must keep its original statements (adding
+  assertions or new tests is always fine); a rewrite of any test not listed is
+  rejected. Before calling a behavior "existing" or "unchanged" in spec_ref, read the
+  code that implements it: a wrong claim there becomes a wrong contract.
 - Do not split work that does not genuinely divide: one indivisible feature is one
   task. Fewer, well-scoped tasks beat many tiny ones.
 - key: short snake_case, unique. type: "backend" unless clearly another kind.
