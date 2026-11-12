@@ -822,6 +822,13 @@ both v1 cases passed; they have, §8.)
   that caused r1's false escalation), now visible before any worker runs. Two are
   bad probes (they wrote `str` to `AtomicSaver`, which opens in binary mode); the
   error says so, but they are false alarms. 6 of 13 tasks still carry no probe.
+  *Unprobed claims are flagged* (`unprobed_claims`): a task with no probe whose
+  `spec_ref` uses a claim word (`CLAIM_WORDS`, the same list the planner is told) is
+  printed as UNCHECKED with its first such sentence, and recorded in the plan
+  (`unprobed_claims`). A wording heuristic for the human, not a verdict: on the plans
+  saved from the replay it flags the sentence behind r1's trap in both runs where
+  r1's plan had no probe ("... that do have full_trace is unchanged"), and its known
+  false alarm is a parameter literally named `keep` (r3).
   Planning the 7 goals cost $0.34 (first rule) and $0.38 (second), vs $0.24 without probes.
 
 **Built:** `seam_merge/coordinator/planner.py` (`Planner`, `PlanDraft`, `PlannerFailed`),

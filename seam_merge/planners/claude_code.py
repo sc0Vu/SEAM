@@ -14,6 +14,7 @@ import json
 import shlex
 from pathlib import Path
 
+from seam_merge.coordinator.claims import CLAIM_WORDS
 from seam_merge.coordinator.lead import PlanError, plan_from_dict
 from seam_merge.coordinator.planner import PlanDraft, PlannerFailed
 from seam_merge.sandbox.base import Sandbox
@@ -92,8 +93,8 @@ Rules:
   self-contained pytest file asserting it: {{"name": short_snake_case, "code": "..."}}.
   They run on the current, unmodified code before any work starts, from the
   repository root, offline, with pytest's tmp_path available; a failing probe means
-  the claim is false. Keep each to one claim. Words like "existing", "unchanged",
-  "still", "keep", "preserve" or "currently" in spec_ref are claims: probe each one.
+  the claim is false. Keep each to one claim. Words like {claim_words} in spec_ref
+  are claims: probe each one.
   Leave it empty only when spec_ref says nothing about how the code behaves today.
 - Do not split work that does not genuinely divide: one indivisible feature is one
   task. Fewer, well-scoped tasks beat many tiny ones.
@@ -128,7 +129,8 @@ class ClaudeCodePlanner:
 
     def command(self, goal: str) -> str:
         argv = [
-            self.claude, "-p", _PROMPT.format(goal=goal.strip()),
+            self.claude, "-p", _PROMPT.format(
+                goal=goal.strip(), claim_words=", ".join(f'"{w}"' for w in CLAIM_WORDS)),
             "--output-format", "json",
             "--tools", ",".join(PLANNER_TOOLS),
             "--dangerously-skip-permissions",  # read-only tools, inside the sandbox
@@ -160,11 +162,15 @@ class ClaudeCodePlanner:
         return PlanDraft(plan=plan, notes=notes, cost_usd=cost, usage=usage_from_result(data))
 
 
-def plan_to_json(draft: PlanDraft, goal_text: str, claims: list | None = None) -> str:
+def plan_to_json(draft: PlanDraft, goal_text: str, claims: list | None = None,
+                 unprobed: list | None = None) -> str:
     """The draft as a plan file `load_plan` reads back, with the goal text, the
-    planner's notes and the claim check kept alongside for the human who reviews it."""
+    planner's notes and the claim check (probe results, and statements about current
+    behavior that no probe covers) kept alongside for the human who reviews it."""
     out = {"goal": draft.plan.goal, "goal_text": goal_text,
            "planner_notes": draft.notes, "tasks": draft.plan.tasks}
     if claims is not None:
         out["claim_check"] = [vars(c) for c in claims]
+    if unprobed is not None:
+        out["unprobed_claims"] = [vars(u) for u in unprobed]
     return json.dumps(out, indent=2) + "\n"

@@ -17,7 +17,7 @@ from pathlib import Path
 
 from seam_merge import __version__
 from seam_merge.coordinator import escalation
-from seam_merge.coordinator.claims import check_claims
+from seam_merge.coordinator.claims import check_claims, unprobed_claims
 from seam_merge.coordinator.lead import Budget, Lead, goal_budget, load_plan
 from seam_merge.engine.errors import SeamError
 from seam_merge.engine.git import GitRepo, Identity
@@ -174,7 +174,8 @@ def cmd_plan(args: argparse.Namespace) -> None:
         claims = check_claims(draft.plan.tasks, Path(d), DockerSandbox(args.image,
                                                                        user=host_user()))
     _report_proxy(proxy)
-    out.write_text(plan_to_json(draft, args.goal, claims))
+    unprobed = unprobed_claims(draft.plan.tasks)
+    out.write_text(plan_to_json(draft, args.goal, claims, unprobed))
     by_key = {t["key"]: t for t in draft.plan.tasks}
     for t in draft.plan.tasks:
         deps = f"  after {t.get('blocked_by')}" if t.get("blocked_by") else ""
@@ -184,25 +185,30 @@ def cmd_plan(args: argparse.Namespace) -> None:
     if overlaps:
         print(f"  overlapping scopes (will run one at a time): {overlaps}")
     print(f"\nplanner notes: {draft.notes}")
-    _print_claims(claims)
+    _print_claims(claims, unprobed)
     usage = format_usage(draft.usage) if draft.usage else "n/a"
     print(f"\nwrote {out}  (${draft.cost_usd:.2f}; {usage})")
     print(f"review it, then: seam run --repo {args.repo} --plan {out} ...")
 
 
-def _print_claims(claims) -> None:
-    """The claim check, loudly when a claim failed: the human must read it before run."""
-    if not claims:
-        print("\nclaims about current behavior: none probed")
-        return
+def _print_claims(claims, unprobed=()) -> None:
+    """The claim check, loudly when a claim failed or went unchecked: the human must
+    read it before run."""
     held = sum(c.outcome == "holds" for c in claims)
-    print(f"\nclaims about current behavior: {held}/{len(claims)} hold")
+    print(f"\nclaims about current behavior: {held}/{len(claims)} hold" if claims
+          else "\nclaims about current behavior: none probed")
     for c in claims:
         if c.outcome != "holds":
             print(f"  WARNING {c.outcome.upper()}: {c.task}/{c.name}: {c.detail}")
     if held < len(claims):
         print("  A false claim becomes a wrong contract that review enforces: fix the "
               "plan's spec_ref (or the probe) before running it.")
+    for u in unprobed:
+        more = f" (+{u.sentences - 1} more)" if u.sentences > 1 else ""
+        print(f"  UNCHECKED: {u.task} states current behavior with no probe{more}: "
+              f"\"{u.excerpt}\"")
+    if unprobed:
+        print("  Check those statements against the code yourself, or re-plan.")
 
 
 def identity(text: str) -> Identity:

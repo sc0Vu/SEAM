@@ -25,6 +25,10 @@ from seam_merge.sandbox.base import Sandbox
 
 CLAIMS_DIR = "seam_claims"
 _REPORT = ".claims-junit.xml"
+# Words that mark a statement about how the code behaves today. The planner is told
+# to probe each one (planners/claude_code.py); `unprobed_claims` flags the misses.
+CLAIM_WORDS = ("existing", "unchanged", "still", "keep", "preserve", "currently")
+_CLAIM_RE = re.compile(r"\b(existing|unchanged|still|keeps?|preserv\w*|currently)\b", re.I)
 
 
 @dataclass(frozen=True)
@@ -36,6 +40,32 @@ class ClaimResult:
     name: str
     outcome: str
     detail: str = ""
+
+
+@dataclass(frozen=True)
+class UnprobedClaim:
+    """A task whose spec_ref states current behavior but carries no probe: nothing
+    checked those statements. `sentences` counts them; `excerpt` is the first."""
+
+    task: str
+    sentences: int
+    excerpt: str
+
+
+def unprobed_claims(tasks: list[dict]) -> list[UnprobedClaim]:
+    """Tasks with no `claim_probes` whose spec_ref uses a claim word (CLAIM_WORDS).
+    A wording heuristic for the human at the plan checkpoint, not a verdict: it can
+    flag a sentence about new behavior that happens to say "keep", and a task that
+    has some probes is never flagged, since probes cannot be matched to sentences."""
+    out = []
+    for t in tasks:
+        if t.get("claim_probes"):
+            continue
+        sentences = [s.strip() for s in re.split(r"(?<=[.;])\s+|\n+", t.get("spec_ref", ""))]
+        hits = [s for s in sentences if _CLAIM_RE.search(s)]
+        if hits:
+            out.append(UnprobedClaim(t["key"], len(hits), hits[0][:200]))
+    return out
 
 
 def _module(task: str, name: str) -> str:

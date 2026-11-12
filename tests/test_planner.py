@@ -97,7 +97,7 @@ def test_planner_declares_which_existing_tests_a_task_may_rewrite(tmp_path):
 
 
 def test_planner_backs_current_behavior_claims_with_probes(tmp_path):
-    from seam_merge.coordinator.claims import ClaimResult
+    from seam_merge.coordinator.claims import ClaimResult, UnprobedClaim
 
     item = PLAN_SCHEMA["properties"]["tasks"]["items"]
     assert "claim_probes" in item["required"]
@@ -105,7 +105,10 @@ def test_planner_backs_current_behavior_claims_with_probes(tmp_path):
     draft = json.loads(json.dumps(DRAFT))
     draft["tasks"][1]["claim_probes"] = [{"name": "old", "code": "def test_x(): pass\n"}]
     plan = ClaudeCodePlanner(FakeSandbox(result(structured_output=draft))).plan("g", tmp_path)
-    written = json.loads(plan_to_json(plan, "goal text", [ClaimResult("setlist", "old", "holds")]))
+    written = json.loads(plan_to_json(plan, "goal text", [ClaimResult("setlist", "old", "holds")],
+                                      [UnprobedClaim("use_it", 1, "x is unchanged.")]))
+    assert written["unprobed_claims"] == [{"task": "use_it", "sentences": 1,
+                                           "excerpt": "x is unchanged."}]
     assert written["claim_check"] == [{"task": "setlist", "name": "old", "outcome": "holds",
                                        "detail": ""}]
     probes = {t["key"]: t.get("claim_probes") for t in written["tasks"]}
