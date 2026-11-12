@@ -118,7 +118,8 @@ retry denied scope requests that merges may have freed, dispatch idle workers (r
 on their own in_progress tasks first, then adopt an in_progress task of their type
 whose owner is not in this run — after a restart with fewer workers, or a human's
 `rework` — via `TaskStore.reassign`, then a fresh claim → new worktree + branch
-`seam/task-<id>` off the target), start one review if the reviewer is free; then wait
+`seam/<namespace>/task-<id>` off the target), start one review if the reviewer is
+free; then wait
 for any run to finish. A worker's changes are committed on its branch by the
 orchestrator, and the diff stored at submit is git's (`target...branch`), not the
 worker's. It stops when nothing is running and nothing can start (done, escalated,
@@ -277,6 +278,16 @@ may_change_tests[]  (pre-existing tests, `path::[Class::]name`, the lead lets th
 proposals[]  (separate work the worker set aside in its latest submission; text for
               the reviewer and the lead, never a task by itself, §2)
 ```
+
+**Task branches.** `seam/<namespace>/task-<id>`, where the namespace is a short
+random id made once per state dir and stored in it (`meta` table). Task ids restart
+at 1 in every state dir, so without it two state dirs on one repo (a second goal, a
+fresh `--state-dir`, a different `--target`) would collide on `seam/task-1`, which
+previously made `git worktree add -b` fail and stranded the task in `claimed`. A
+branch that already exists in the namespace is the task's own (a resume after a crash
+or a removed worktree) and is reattached, keeping its commits. After a merge the
+branch is deleted, but only if every commit on it is in the target and the ref has
+not moved; branches of escalated or cancelled tasks stay for a human to inspect.
 
 **Commit identity.** SEAM makes every commit (agents never run git), so the
 **committer** is always `SEAM merge engine <seam@localhost>`. The **author** is the

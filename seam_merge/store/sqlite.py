@@ -11,6 +11,7 @@ each read-check-write (the claim, the merge-slot take) is atomic.
 from __future__ import annotations
 
 import json
+import secrets
 import sqlite3
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
@@ -50,6 +51,11 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE UNIQUE INDEX IF NOT EXISTS one_merging ON tasks(state) WHERE state = 'merging';
 -- One row per agent run (worker run or review), for cost and token accounting.
 -- Goals, and which goal each one amends (a change of direction, `Lead.amend`).
+-- Facts about this state dir itself (e.g. its branch namespace).
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS goals (
     goal_id    TEXT PRIMARY KEY,
     supersedes TEXT,                            -- the goal this one amends, or NULL
@@ -92,6 +98,16 @@ class TaskStore:
         self._db.executescript(_SCHEMA)
         self._migrate()
         self.max_attempts = max_attempts
+        self.branch_namespace = self._branch_namespace()
+
+    def _branch_namespace(self) -> str:
+        """A short random id, made once per state dir and kept: task branches are
+        `seam/<namespace>/task-<id>`. Task ids restart at 1 in every state dir, so
+        without it two state dirs on one repo would both want `seam/task-1`."""
+        self._db.execute("INSERT OR IGNORE INTO meta (key, value) VALUES ('branch_namespace', ?)",
+                         (secrets.token_hex(3),))
+        return self._db.execute(
+            "SELECT value FROM meta WHERE key = 'branch_namespace'").fetchone()["value"]
 
     def close(self) -> None:
         self._db.close()

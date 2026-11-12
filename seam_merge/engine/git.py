@@ -189,9 +189,27 @@ class GitRepo:
         self._git("commit", "-q", "--no-verify", "-m", message, env=self._identity_env())
         return self.rev_parse("HEAD")
 
+    def has_branch(self, branch: str) -> bool:
+        return self._run("rev-parse", "--verify", "-q", f"refs/heads/{branch}").returncode == 0
+
     def add_worktree(self, path: Path, branch: str, start: str) -> None:
-        """Create a task's isolated worktree on a new `branch` from `start` (invariant 1)."""
-        self._git("worktree", "add", "-b", branch, str(path), start)
+        """Create a task's isolated worktree (invariant 1) on a new `branch` from
+        `start`, or on `branch` as it is if it already exists: a task resumed after a
+        crash or a removed worktree keeps its commits."""
+        if self.has_branch(branch):
+            self._git("worktree", "add", str(path), branch)
+        else:
+            self._git("worktree", "add", "-b", branch, str(path), start)
+
+    def delete_merged_branch(self, branch: str, into: str) -> bool:
+        """Delete `branch` if every commit on it is already in `into`; return whether
+        it was deleted. The ref is removed only if it has not moved meanwhile."""
+        if not self.has_branch(branch):
+            return False
+        sha = self.rev_parse(branch)
+        if not self.is_ancestor(sha, into):
+            return False
+        return self._run("update-ref", "-d", f"refs/heads/{branch}", sha).returncode == 0
 
     def remove_worktree(self, path: Path) -> None:
         self._git("worktree", "remove", "--force", str(path))

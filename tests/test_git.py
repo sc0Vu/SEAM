@@ -172,3 +172,25 @@ def test_identity_rejects_anything_that_could_forge_a_header(name, email):
         Identity(name, email)
     with pytest.raises(ValueError):
         Identity.parse(f"{name} <{email}>")
+
+
+def test_add_worktree_reattaches_an_existing_branch(repo, tmp_path):
+    """A resumed task whose worktree was removed keeps its commits."""
+    g = GitRepo(repo)
+    g.add_worktree(tmp_path / "wt", "seam/ns/task-1", "main")
+    (tmp_path / "wt" / "c.py").write_text("C = 1\n")
+    w = GitRepo(tmp_path / "wt")
+    w.stage_all()
+    head = w.commit_staged("task 1")
+    g.remove_worktree(tmp_path / "wt")
+    g.add_worktree(tmp_path / "wt2", "seam/ns/task-1", "main")
+    assert GitRepo(tmp_path / "wt2").rev_parse("HEAD") == head
+
+
+def test_only_a_fully_merged_branch_is_deleted(repo):
+    g = GitRepo(repo)
+    branch_with(repo, "t1", {"a.py": "A = 2\n"})
+    assert not g.delete_merged_branch("t1", "main") and g.has_branch("t1")  # not merged
+    git(repo, "update-ref", "refs/heads/main", g.rev_parse("t1"))
+    assert g.delete_merged_branch("t1", "main") and not g.has_branch("t1")
+    assert not g.delete_merged_branch("t1", "main")  # already gone

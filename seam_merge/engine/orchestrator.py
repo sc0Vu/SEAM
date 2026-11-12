@@ -136,7 +136,7 @@ class Orchestrator:
         task = self.store.claim(w.id, w.type)
         if task is None:
             return None
-        branch = f"seam/task-{task.id}"
+        branch = f"seam/{self.store.branch_namespace}/task-{task.id}"
         path = self.worktree_root / f"task-{task.id}"
         if not path.exists():
             self.worktree_root.mkdir(parents=True, exist_ok=True)
@@ -255,6 +255,9 @@ class Orchestrator:
                 return
             if task.state is State.MERGED and task.worktree_path:
                 self.repo.remove_worktree(Path(task.worktree_path))
+                # Its commits are in the target now (and the trailers name the task),
+                # so the branch is only clutter. Escalated tasks keep theirs.
+                self.repo.delete_merged_branch(task.branch or "", self.target)
             if task.state is State.QUEUED_FOR_MERGE:
                 if task.id in retried:
                     return

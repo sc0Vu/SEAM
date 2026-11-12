@@ -437,3 +437,53 @@ def test_proposals_are_kept_with_the_task_and_reach_the_reviewer(tmp_path):
     assert store.get(t.id).proposals == ("lib.greet mishandles empty names",)
     assert reviewer.proposals == ("lib.greet mishandles empty names",)
     assert store.list(State.OPEN) == []  # a proposal is not a task (invariant 7)
+
+
+# -- task branches: one namespace per state dir ------------------------------------------
+
+def test_a_leftover_seam_branch_does_not_strand_the_task(tmp_path):
+    """Regression: `seam/task-1` from an earlier run (another state dir, or an older
+    SEAM) made `git worktree add -b` fail and left the task stuck in `claimed`."""
+    w = ScriptedWorker("w1", {"count": writes({"count.py": "N = 1\n"})})
+    repo, store, _, orch = build(tmp_path, [w])
+    git(repo, "branch", "seam/task-1", "main")
+    t = add(store, "count", ["count.py"])
+    assert orch.run().ids_in(State.MERGED) == [t.id]
+
+
+def test_two_state_dirs_on_one_repo_never_share_a_branch(tmp_path):
+    repo, first, _, orch = build(tmp_path, [ScriptedWorker("w1", {
+        "count": writes({"count.py": "N = 1\n"})})])
+    add(first, "count", ["count.py"])
+    assert orch.run().ids_in(State.MERGED) == [1]
+
+    second = TaskStore(tmp_path / "other.sqlite")
+    g = GitRepo(repo)
+    sandbox = ImportCheckSandbox()
+    orch2 = Orchestrator(second, Lead(second, "g", Budget(100)), g,
+                         [ScriptedWorker("w1", {"more": writes({"more.py": "M = 1\n"})})],
+                         ReviewGate(g, sandbox, ScriptedReviewer(), scratch=tmp_path),
+                         MergeEngine(second, g, sandbox, suite_cmd="pytest", scratch=tmp_path),
+                         tmp_path / "worktrees2")
+    t2 = add(second, "more", ["more.py"])  # task 1 again, in its own state dir
+    assert orch2.run().ids_in(State.MERGED) == [t2.id]
+    assert first.branch_namespace != second.branch_namespace
+    assert {"count.py", "more.py"} <= set(git(repo, "ls-tree", "--name-only", "main").split())
+
+
+def test_merged_branches_are_deleted_and_escalated_ones_kept(tmp_path):
+    scripts = {
+        "rename greet to hello": writes({"lib.py": LIB.replace("greet", "hello"),
+                                         "app.py": "from lib import hello\n"}),
+        "add farewell using greet": writes({"farewell.py": "from lib import greet\n"}),
+    }
+    repo, store, _, orch = build(tmp_path, [ScriptedWorker("w1", scripts),
+                                            ScriptedWorker("w2", scripts)])
+    add(store, "rename greet to hello", ["lib.py", "app.py"])
+    add(store, "add farewell using greet", ["farewell.py"])
+    orch.run()
+    (merged,) = store.list(State.MERGED)
+    (escalated,) = store.list(State.NEEDS_HUMAN)
+    assert merged.branch.startswith(f"seam/{store.branch_namespace}/task-")
+    assert not GitRepo(repo).has_branch(merged.branch)
+    assert GitRepo(repo).has_branch(escalated.branch)  # a human may need to inspect it

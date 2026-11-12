@@ -280,3 +280,13 @@ def test_old_task_table_gains_the_newer_columns(tmp_path):
 def test_may_change_tests_round_trips(store):
     ids = ("tests/test_a.py::test_x", "tests/test_a.py::TestY::test_z")
     assert store.create(spec(["a/**"], may_change_tests=ids)).spec.may_change_tests == ids
+
+
+def test_branch_namespace_is_per_state_dir_and_stable(tmp_path):
+    a = TaskStore(tmp_path / "a.sqlite")
+    ns = a.branch_namespace
+    a.close()
+    reopened = TaskStore(tmp_path / "a.sqlite")
+    other = TaskStore(tmp_path / "b.sqlite")
+    assert reopened.branch_namespace == ns and len(ns) == 6
+    assert other.branch_namespace != ns
