@@ -1,7 +1,7 @@
 # SEAM progress log
 
-Last updated: 2026-11-12. State: 73 commits on `main`;
-296 tests passing, ruff clean. Design and every measurement: `doc/architecture.md` (§8, §10–§12).
+Last updated: 2026-11-12. State: released **seam-merge 0.1.0** on PyPI (tag v0.1.0);
+300 tests passing, ruff clean. Design and every measurement: `doc/architecture.md` (§8, §10–§12).
 
 ## Done
 
@@ -72,6 +72,16 @@ Last updated: 2026-11-12. State: 73 commits on `main`;
   Seen on real agent output in greeter case 2 (2026-11-12).
 - Lead refuses to load the same goal twice; scope requests count toward the retry
   bound.
+
+### Release (2026-11-12)
+- `pipx install seam-merge`; commands `seam`, `seam-mcp`; import package `seam_merge`
+  (`seam` on PyPI is an unrelated SDK). `seam image build` builds the sandbox image
+  from the packaged Dockerfile (Claude Code 2.1.312 pinned).
+- CI tests the installed wheel with the source tree moved away. That test found the
+  credential proxy failed for installs outside `$HOME` under colima (fixed: source
+  passed inline instead of bind-mounted).
+- Releases: bump version + CHANGELOG, push `v<version>`; `release.yml` publishes via
+  PyPI trusted publishing (no stored token) and creates the GitHub release.
 
 ## Results (single runs; author-chosen repos and tasks)
 
