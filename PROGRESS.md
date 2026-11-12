@@ -1,7 +1,7 @@
 # SEAM progress log
 
-Last updated: 2026-11-12. State: released **seam-merge 0.1.0** on PyPI (tag v0.1.0);
-300 tests passing, ruff clean. Design and every measurement: `doc/architecture.md` (§8, §10–§12).
+Last updated: 2026-11-12. State: released **seam-merge 0.2.0** on PyPI (tag v0.2.0);
+359 tests passing, ruff clean. Design and every measurement: `doc/architecture.md` (§8, §10–§12).
 
 ## Done
 
@@ -73,7 +73,10 @@ Last updated: 2026-11-12. State: released **seam-merge 0.1.0** on PyPI (tag v0.1
 - Lead refuses to load the same goal twice; scope requests count toward the retry
   bound.
 
-### Release (2026-11-12)
+### Release 0.2.0 (2026-11-12)
+- Existing-test guard, claim probes in `seam plan`, worker proposals; see CHANGELOG.
+
+### Release 0.1.0 (2026-11-12)
 - `pipx install seam-merge`; commands `seam`, `seam-mcp`; import package `seam_merge`
   (`seam` on PyPI is an unrelated SDK). `seam image build` builds the sandbox image
   from the packaged Dockerfile (Claude Code 2.1.312 pinned).
