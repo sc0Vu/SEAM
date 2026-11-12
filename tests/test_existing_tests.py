@@ -79,3 +79,39 @@ def test_unparseable_original_has_nothing_to_protect():
 ])
 def test_is_test_file(path, expected):
     assert is_test_file(path) is expected
+
+
+@pytest.mark.parametrize("silence", [
+    "@pytest.mark.skip(reason='later')\n",
+    "@pytest.mark.xfail(strict=True)\n",
+    "@pytest.mark.skipif(True, reason='x')\n",
+])
+def test_adding_a_skip_or_xfail_marker_silences_it(silence):
+    assert changed_tests(P, R3_BEFORE, silence + R3_BEFORE.lstrip()) == {
+        f"{P}::test_rotate_file_no_rotation": "silenced"}
+
+
+@pytest.mark.parametrize("line", ["    return\n", "    pytest.skip('flaky')\n",
+                                  "    if True:\n        pytest.xfail('x')\n"])
+def test_an_early_exit_in_the_body_silences_it(line):
+    head, rest = R3_BEFORE.split("    file_path =", 1)
+    assert changed_tests(P, R3_BEFORE, head + line + "    file_path =" + rest) == {
+        f"{P}::test_rotate_file_no_rotation": "silenced"}
+
+
+def test_a_module_or_class_marker_silences_every_test_under_it():
+    two = "def test_a():\n    assert 1\n\nclass TestB:\n    def test_c(self):\n        assert 1\n"
+    module = "import pytest\npytestmark = pytest.mark.skip\n\n" + two
+    assert changed_tests(P, two, module) == {f"{P}::test_a": "silenced",
+                                             f"{P}::TestB::test_c": "silenced"}
+    klass = two.replace("class TestB:", "@pytest.mark.xfail\nclass TestB:")
+    assert changed_tests(P, two, klass) == {f"{P}::TestB::test_c": "silenced"}
+
+
+def test_ordinary_added_statements_and_other_markers_are_fine():
+    stronger = R3_BEFORE + "    assert file_path.parent.exists()\n"
+    marked = "@pytest.mark.slow\n" + R3_BEFORE.lstrip()
+    helper = R3_BEFORE + "    def size(p):\n        return p.stat().st_size\n"
+    assert changed_tests(P, R3_BEFORE, stronger) == {}
+    assert changed_tests(P, R3_BEFORE, marked) == {}
+    assert changed_tests(P, R3_BEFORE, helper) == {}  # a nested def's return is not an exit

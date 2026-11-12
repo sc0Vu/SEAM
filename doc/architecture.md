@@ -150,7 +150,9 @@ edit the suite. In the replay (§12, r3) a wrong contract was enforced by the re
 and the worker rewrote a pre-existing test to match, so a behavior change merged with
 everything green. The rule is syntactic: a test function present at the merge base is
 rewritten if it was deleted or any of its original top-level statements or decorators
-(compared as `ast.unparse`) is gone; adding assertions or new tests is free. A rewrite
+(compared as `ast.unparse`) is gone, or if the change silences it (a skip/xfail
+marker on it, its class or its module, or an added `return`, `pytest.skip()` or
+`pytest.xfail()`); other added assertions or new tests are free. A rewrite
 the task does not list rejects the attempt before tests run or a model is paid, and
 repeated rejections escalate (invariant 11): when the contract contradicts the
 existing behavior, a human decides. Only the lead authorizes (`may_change_tests`, in
