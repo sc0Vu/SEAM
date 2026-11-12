@@ -254,3 +254,38 @@ def test_a_missing_image_fails_instead_of_being_pulled(workdir):
 def test_env_failure_means_the_command_never_ran(code, env):
     assert RunResult(code, "").env_failure is env
     assert not RunResult(127, "", timed_out=True).env_failure  # a timeout ran the code
+
+
+# -- the sandbox image, built from the Dockerfile shipped in the package --------------
+
+def test_image_build_sends_no_context_and_can_override_the_pin():
+    from seam_merge.sandbox.docker import build_image_argv
+
+    assert build_image_argv("img") == ["docker", "build", "-t", "img", "-"]
+    assert build_image_argv("img", "2.0.0") == [
+        "docker", "build", "-t", "img", "--build-arg", "CLAUDE_CODE_VERSION=2.0.0", "-"]
+
+
+def test_packaged_dockerfile_pins_claude_code():
+    from seam_merge.sandbox.docker import DOCKERFILE
+
+    pins = [ln for ln in DOCKERFILE.read_text().splitlines()
+            if ln.startswith("ARG CLAUDE_CODE_VERSION=")]
+    assert len(pins) == 1 and pins[0].split("=", 1)[1] not in ("", "latest")
+
+
+def test_build_image_feeds_the_dockerfile_on_stdin(monkeypatch):
+    from seam_merge.sandbox import docker as D
+
+    seen = {}
+
+    def fake_run(argv, stdin):
+        seen["argv"], seen["stdin"] = argv, stdin.read()
+        return subprocess.CompletedProcess(argv, seen.get("code", 0))
+
+    monkeypatch.setattr(D.subprocess, "run", fake_run)
+    D.build_image("img")
+    assert seen["argv"][-1] == "-" and seen["stdin"] == D.DOCKERFILE.read_bytes()
+    seen["code"] = 1
+    with pytest.raises(D.ImageBuildFailed):
+        D.build_image("img")

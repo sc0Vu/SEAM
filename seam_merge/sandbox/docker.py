@@ -23,7 +23,8 @@ from seam_merge.engine.errors import SeamError
 from seam_merge.sandbox.base import RunResult
 from seam_merge.sandbox.proxy import CREDENTIAL_KINDS, HEALTH_PATH
 
-DEFAULT_IMAGE = "seam-sandbox"  # built from seam_merge/sandbox/Dockerfile
+DEFAULT_IMAGE = "seam-sandbox"  # built by `seam image build` from DOCKERFILE
+DOCKERFILE = Path(__file__).with_name("Dockerfile")  # package data
 WORKER_NETWORK = "seam-workers"  # --internal: no route out except via the proxy
 PROXY_PORT = 8080
 PROXY_SCRIPT = Path(__file__).with_name("proxy.py")  # mounted read-only into the proxy
@@ -119,6 +120,27 @@ class DockerSandbox:
             out = e.stdout.decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
             return RunResult(exit_code=-1, output=out, timed_out=True)
         return RunResult(exit_code=proc.returncode, output=proc.stdout + proc.stderr)
+
+
+class ImageBuildFailed(SeamError):
+    """`docker build` of the sandbox image failed; its output was already shown."""
+
+
+def build_image_argv(tag: str = DEFAULT_IMAGE, claude_code_version: str | None = None) -> list[str]:
+    """`docker build` argv for the sandbox image. The Dockerfile is fed on stdin with
+    no build context, so nothing from the host directory is sent to the daemon."""
+    argv = ["docker", "build", "-t", tag]
+    if claude_code_version:
+        argv += ["--build-arg", f"CLAUDE_CODE_VERSION={claude_code_version}"]
+    return [*argv, "-"]
+
+
+def build_image(tag: str = DEFAULT_IMAGE, claude_code_version: str | None = None) -> None:
+    """Build the sandbox image locally from the packaged Dockerfile. Built on the
+    user's machine, never pulled: SEAM runs containers with `--pull never`."""
+    with DOCKERFILE.open("rb") as dockerfile:
+        if subprocess.run(build_image_argv(tag, claude_code_version), stdin=dockerfile).returncode:
+            raise ImageBuildFailed(f"docker build of {tag!r} failed (output above)")
 
 
 class ProxyError(SeamError):

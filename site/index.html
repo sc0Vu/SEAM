@@ -202,7 +202,7 @@ footer { border-top: 1px solid var(--line); padding: 28px 0 48px; color: var(--m
     (from <code>claude setup-token</code>) or <code>ANTHROPIC_API_KEY</code>.</p>
 <pre><code>git clone https://github.com/sc0Vu/SEAM && cd SEAM
 python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
-docker build -t seam-sandbox seam_merge/sandbox/
+seam image build
 read -s "CLAUDE_CODE_OAUTH_TOKEN?token: " && export CLAUDE_CODE_OAUTH_TOKEN
 
 # the happy-path case on a throwaway repo

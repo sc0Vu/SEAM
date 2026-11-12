@@ -86,7 +86,7 @@ through the proxy up to that cap.
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 colima start                              # or start Docker another way
-docker build -t seam-sandbox seam_merge/sandbox/     # python + pytest + Claude Code
+seam image build     # the sandbox image: python + pytest + Claude Code
 
 # set the credential without it landing on screen or in shell history
 read -s "CLAUDE_CODE_OAUTH_TOKEN?token: " && export CLAUDE_CODE_OAUTH_TOKEN

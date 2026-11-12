@@ -20,7 +20,7 @@ the escalation-rate benchmark, which needs a real codebase.
 ```sh
 # 0. once: a Docker daemon and the sandbox image (python + pytest + Claude Code)
 colima start
-docker build -t seam-sandbox seam_merge/sandbox/
+seam image build
 
 # 1. auth for the workers. Set exactly ONE of these, by env var only. It is handed
 #    to SEAM's credential proxy; worker containers only ever see a placeholder.

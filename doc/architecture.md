@@ -42,7 +42,9 @@ worker runtime as pluggable.**
   command with only the work dir mounted, `--pull never` (images are built or pulled
   explicitly, never implicitly by name), `--network none`, `--cap-drop ALL`,
   `no-new-privileges`, and memory/pid caps. Image: `seam_merge/sandbox/Dockerfile`
-  (`seam-sandbox`: python + pytest + Claude Code). Test runs get `--network none`.
+  (`seam-sandbox`: python + pytest + Claude Code, its version pinned), shipped in the
+  package and built locally by `seam image build` (Dockerfile on stdin, no build
+  context); never pulled, as every container runs with `--pull never`. Test runs get `--network none`.
   Worker runs need the model API, so they run on the `--internal` network
   `seam-workers`, whose only reachable host is SEAM's credential proxy (§10). They
   get the proxy's URL and a *placeholder* credential; the real one is held only by

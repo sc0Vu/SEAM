@@ -31,6 +31,7 @@ from seam_merge.sandbox.docker import (
     DEFAULT_IMAGE,
     CredentialProxyContainer,
     DockerSandbox,
+    build_image,
     host_user,
 )
 from seam_merge.sandbox.proxy import CREDENTIAL_KINDS
@@ -126,7 +127,8 @@ def preflight_sandbox(args: argparse.Namespace, sandbox: DockerSandbox) -> None:
         raise PreflightError("docker daemon not reachable (colima start?)")
     if subprocess.run(["docker", "image", "inspect", args.image],
                       capture_output=True).returncode != 0:
-        raise PreflightError(f"image {args.image!r} missing: docker build -t {args.image} sandbox/")
+        raise PreflightError(f"image {args.image!r} missing: build it with "
+                             f"`seam image build --image {args.image}`")
     probe = args.state_dir / "tmp"
     probe.mkdir(parents=True, exist_ok=True)
     (probe / ".seam-probe").write_text("ok")
@@ -281,6 +283,13 @@ def _print_tasks(tasks) -> None:
               f"  {note}")
 
 
+def cmd_image_build(args: argparse.Namespace) -> None:
+    """Build the sandbox image from the Dockerfile shipped in the package."""
+    print(f"building {args.image} (python + pytest + Claude Code) with docker...")
+    build_image(args.image, args.claude_code_version)
+    print(f"built {args.image}")
+
+
 def cmd_status(args: argparse.Namespace) -> None:
     tasks = _store(args.state_dir).list()
     counts = Counter(t.state for t in tasks)
@@ -419,6 +428,13 @@ def parser() -> argparse.ArgumentParser:
                    help="reviewer also writes adversarial pytest probes; the gate runs "
                         "them in the sandbox and any failure rejects (doc §11)")
     r.set_defaults(func=cmd_run)
+
+    im = sub.add_parser("image", help="the sandbox image workers and tests run in")
+    im_sub = im.add_subparsers(dest="image_cmd", required=True)
+    ib = im_sub.add_parser("build", help="build it locally from the packaged Dockerfile")
+    ib.add_argument("--image", default=DEFAULT_IMAGE, help="tag to build")
+    ib.add_argument("--claude-code-version", help="override the pinned Claude Code version")
+    ib.set_defaults(func=cmd_image_build)
 
     s = sub.add_parser("status", help="task states, merge queue, escalations")
     common(s)

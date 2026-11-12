@@ -17,6 +17,7 @@ seam-mcp = "seam_merge.mcp_server:main"
 
 [tool.setuptools]
 packages = {find = {include = ["seam_merge*"]}}
+package-data = {"seam_merge.sandbox" = ["Dockerfile"]}
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.5"]
