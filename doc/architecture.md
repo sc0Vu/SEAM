@@ -414,7 +414,16 @@ tool (exit 125–127: use an `--image` with the toolchain) apart from failing te
 reminds that SEAM tests commits only: files present in a folder but untracked or
 gitignored are absent. Both failures were seen on a real Go project (a Python-only
 image, then `cmd/` files hidden by a `.gitignore` rule) and cost $0.49 of agent runs
-before this check existed.
+before this check existed. A pytest suite that collects no tests (exit 5: a project
+with no tests yet) passes the baseline only; the merge gate stays strict.
+
+**Empty repositories.** A target with no commits cannot be run on: every task branches
+from a commit, and the merge moves the target only by compare-and-swap from a known
+one. `run` refuses first, before the checked-out check (whose clone-and-detach advice
+is impossible for a branch with no commits), and prints the one command that fixes it
+(`commit --allow-empty`, then `checkout --detach`). SEAM does not write that root
+commit itself: the empty branch is usually the user's checked-out branch. `plan` only
+reads, so it plans a from-scratch goal against an empty snapshot.
 
 **Broken target vs semantic conflict.** When the merged tree fails, the engine also runs
 the suite on the target alone. If that fails too, the escalation says the target itself

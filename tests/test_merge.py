@@ -227,3 +227,22 @@ def test_a_red_target_is_not_blamed_on_the_task(env):
     assert escalated.id == t.id and escalated.state is State.NEEDS_HUMAN
     assert "main ITSELF fails the suite" in escalated.review_notes
     assert "not a conflict with the task" in escalated.review_notes
+
+
+@pytest.mark.parametrize("suite, exit_code, timed_out, passes", [
+    ("python -m pytest -q", 5, False, True),   # pytest collected no tests: nothing to break
+    ("pytest tests", 5, False, True),
+    ("go test ./...", 5, False, False),       # exit 5 means "no tests" only for pytest
+    ("python -m pytest -q", 5, True, False),  # a timeout is never a pass
+    ("python -m pytest -q", 1, False, False),
+])
+def test_baseline_of_a_project_with_no_tests_yet(env, suite, exit_code, timed_out, passes):
+    _, _, _, engine = env
+    engine.suite_cmd = suite
+    engine.sandbox = type("S", (), {"run": lambda self, cmd, wd, t: RunResult(
+        exit_code, "no tests ran", timed_out)})()
+    if passes:
+        assert engine.require_green_baseline().exit_code == 5
+    else:
+        with pytest.raises(BaselineFailed):
+            engine.require_green_baseline()

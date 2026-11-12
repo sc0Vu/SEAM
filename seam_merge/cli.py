@@ -118,6 +118,13 @@ def preflight(args: argparse.Namespace, repo: GitRepo, sandbox: DockerSandbox) -
     credential = select_credential()
     if shutil.which("claude") is None:
         raise PreflightError("the reviewer needs the `claude` CLI on PATH")
+    if not repo.has_commit(args.target):
+        raise PreflightError(
+            f"{args.target!r} has no commits yet (an empty repository?). Every task "
+            f"branches from a commit and SEAM moves {args.target!r} only from a known "
+            "one, so it needs a first commit. Make one and free the branch: "
+            f"git -C {args.repo} commit --allow-empty -m 'initial commit' && "
+            f"git -C {args.repo} checkout --detach")
     if repo.checked_out_in(args.target):
         raise PreflightError(
             f"{args.target!r} is checked out in {repo.checked_out_in(args.target)}; SEAM "
@@ -164,7 +171,9 @@ def cmd_plan(args: argparse.Namespace) -> None:
     preflight_sandbox(args, DockerSandbox(args.image, user=host_user()))
     scratch = args.state_dir / "tmp"
     with tempfile.TemporaryDirectory(prefix="seam-plan-", dir=scratch) as d:
-        repo.export(repo.rev_parse(args.target), Path(d))
+        if not snapshot(repo, args.target, Path(d)):
+            print(f"{args.target!r} has no commits yet: planning from an empty tree "
+                  "(`run` will need a first commit)")
         with CredentialProxyContainer(credential, args.image,
                                       token_cap=args.token_cap) as proxy:
             check_proxy(proxy, args.image, scratch)
@@ -230,6 +239,16 @@ def identity(text: str) -> Identity:
     return Identity.parse(text)
 
 
+def snapshot(repo: GitRepo, target: str, dest: Path) -> bool:
+    """Write `target`'s committed tree into `dest` for the planner to read; return
+    False, leaving `dest` empty, if `target` has no commits yet (planning a project
+    from scratch in an empty repository)."""
+    if not repo.has_commit(target):
+        return False
+    repo.export(repo.rev_parse(target), dest)
+    return True
+
+
 def cmd_run(args: argparse.Namespace) -> None:
     """Run a team. Holds the state dir's writer lock throughout, so no other command
     changes task state while agents work (the single-writer condition for sqlite)."""
@@ -257,7 +276,9 @@ def _run(args: argparse.Namespace) -> None:
                          target=args.target, scratch=scratch)
     # Before anything is loaded or spent: nothing can merge into a red target.
     print(f"checking the full suite on {args.target} before any agent runs...")
-    merger.require_green_baseline()
+    if merger.require_green_baseline().exit_code != 0:
+        print(f"  no tests on {args.target} yet: nothing to break; every merge must "
+              "still pass the full suite")
     if args.plan:
         _add_goal(args)
         _print_gaps(check_test_cmds(load_plan(args.plan).tasks, args.suite_cmd))

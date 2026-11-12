@@ -201,3 +201,17 @@ def test_current_branch(repo, tmp_path):
     assert g.current_branch() is None  # the fixture leaves HEAD detached
     g.add_worktree(tmp_path / "wt", "seam/ns/task-3", "main")
     assert GitRepo(tmp_path / "wt").current_branch() == "seam/ns/task-3"
+
+
+def test_an_empty_repository(tmp_path):
+    repo = tmp_path / "empty"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    g = GitRepo(repo)
+    assert not g.has_commit("main")
+    git(repo, "commit", "-q", "--allow-empty", "-m", "init")
+    assert g.has_commit("main") and not g.has_commit("nope")
+    out = tmp_path / "out"
+    out.mkdir()
+    g.export(g.rev_parse("main"), out)  # an empty tree: nothing written, no error
+    assert list(out.iterdir()) == []

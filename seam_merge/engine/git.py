@@ -106,6 +106,11 @@ class GitRepo:
             raise GitError(f"git {' '.join(args)}: {proc.stderr.decode().strip()}")
         return proc.stdout.decode().strip()
 
+    def has_commit(self, ref: str) -> bool:
+        """Whether `ref` names a commit; False for a branch with no commits yet (an
+        empty repository's `main`) or a name that does not exist."""
+        return self._run("rev-parse", "--verify", "-q", f"{ref}^{{commit}}").returncode == 0
+
     def rev_parse(self, ref: str) -> str:
         return self._git("rev-parse", "--verify", f"{ref}^{{commit}}")
 
@@ -127,6 +132,8 @@ class GitRepo:
     def export(self, commit: str, dest: Path) -> None:
         """Write `commit`'s files into `dest` — a plain tree, no `.git`, nothing for a
         sandboxed process to reach back into the repository through."""
+        if not self._git("ls-tree", commit):  # an empty tree: nothing to write
+            return
         proc = self._run("archive", "--format=tar", commit)
         if proc.returncode != 0:
             raise GitError(f"git archive: {proc.stderr.decode().strip()}")

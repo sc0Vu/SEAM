@@ -234,3 +234,36 @@ def test_status_and_inspect_show_what_a_worker_set_aside(tmp_path, capsys):
     assert "task 1: Fix X in y.py" in out
     assert cli.main(["inspect", "--state-dir", state, "--task", "1"]) == 0
     assert "1. Fix X in y.py\n   because Z" in capsys.readouterr().out
+
+
+# -- empty repositories ---------------------------------------------------------------
+
+def _empty_repo(tmp_path):
+    repo = tmp_path / "empty"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    return repo
+
+
+def test_run_on_an_empty_repo_says_exactly_what_to_do(tmp_path, monkeypatch, capsys):
+    """Before: the target-checked-out advice (clone and detach) is impossible for a
+    branch with no commits, and `rev-parse main^{commit}` failed further on."""
+    for k in cli.AUTH_ENV:
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "dummy-not-used")
+    monkeypatch.setattr(cli.shutil, "which", lambda name: "/bin/true")
+    repo = _empty_repo(tmp_path)
+    assert cli.main(["run", "--repo", str(repo), "--state-dir", str(tmp_path / "s")]) == 1
+    err = capsys.readouterr().err
+    assert "'main' has no commits yet" in err
+    assert f"git -C {repo} commit --allow-empty -m 'initial commit' && " \
+           f"git -C {repo} checkout --detach" in err
+
+
+def test_planning_snapshot_of_an_empty_repo_is_an_empty_tree(tmp_path):
+    repo = cli.GitRepo(_empty_repo(tmp_path))
+    dest = tmp_path / "snap"
+    dest.mkdir()
+    assert cli.snapshot(repo, "main", dest) is False and list(dest.iterdir()) == []
+    git(repo.path, "commit", "-q", "--allow-empty", "-m", "init")
+    assert cli.snapshot(repo, "main", dest) is True and list(dest.iterdir()) == []

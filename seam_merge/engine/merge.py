@@ -8,6 +8,7 @@ or red suite escalates to `needs_human`; nothing is ever auto-resolved (invarian
 
 from __future__ import annotations
 
+import shlex
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +21,17 @@ from seam_merge.sandbox.base import RunResult, Sandbox
 from seam_merge.store.sqlite import TaskStore
 
 _OUTPUT_TAIL = 4000
+
+
+_PYTEST_NO_TESTS = 5  # pytest's exit code when it collected no tests
+
+
+def _is_pytest(cmd: str) -> bool:
+    try:
+        tokens = shlex.split(cmd)
+    except ValueError:
+        return False
+    return any(t == "pytest" or t.endswith("/pytest") for t in tokens)
 
 
 class BaselineFailed(SeamError):
@@ -93,12 +105,19 @@ class MergeEngine:
             self.repo.export(self.repo.rev_parse(rev), Path(d))
             return self.sandbox.run(self.suite_cmd, Path(d), self.suite_timeout)
 
-    def require_green_baseline(self) -> None:
+    def require_green_baseline(self) -> RunResult:
         """Raise `BaselineFailed` unless the full suite passes on the target as it is.
-        Run it before any agent: a red target means nothing could ever merge."""
+        Run it before any agent: a red target means nothing could ever merge.
+
+        A pytest suite that collects no tests (exit 5, a project with no tests yet)
+        passes here, and only here: there is nothing on the target to break. The merge
+        gate stays strict. Returns the run, so the caller can say which it was."""
         result = self.run_suite(self.target)
-        if not result.ok:
+        no_tests_yet = (result.exit_code == _PYTEST_NO_TESTS and not result.timed_out
+                        and _is_pytest(self.suite_cmd))
+        if not result.ok and not no_tests_yet:
             raise BaselineFailed(self.target, result)
+        return result
 
     def recover(self) -> list[Task]:
         """Settle tasks left in `merging` by a crash: `merged` if their merge commit

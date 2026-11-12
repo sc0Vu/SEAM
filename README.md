@@ -113,7 +113,9 @@ seam status --state-dir ~/seam-demo/case1-state
 ```
 
 SEAM moves the target branch itself, so run it on a **dedicated clone** whose target
-branch is not checked out (`make_repo.sh` leaves `HEAD` detached).
+branch is not checked out (`make_repo.sh` leaves `HEAD` detached). Starting from an
+empty repository? `seam plan` works as is; before `seam run`, give it a first commit
+and free the branch: `git commit --allow-empty -m "initial commit" && git checkout --detach`.
 
 ## Commands
 
