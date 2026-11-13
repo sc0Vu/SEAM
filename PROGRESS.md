@@ -76,7 +76,10 @@ Last updated: 2026-11-13. State: released **seam-merge 0.2.3** on PyPI (tag v0.2
   (failures reported), statements about current behavior with no probe flagged
   UNCHECKED, and each `test_cmd` compared with `--suite-cmd` (missing doctest flags).
 - `seam plan --base`: revise an existing plan; departures from the base reported
-  (`plan_changes`). Unmeasured on a real goal.
+  (`plan_changes`). One trial (2026-11-13, a from-scratch web game, empty repo): a
+  2-task plan with a hand edit, revised to add docs and a Pages workflow; both base
+  tasks kept byte-identical, 2 tasks added, report matched ($0.03 + $0.05). n=1, on
+  an empty repo: not yet tried where the goal forces a base task to change.
 
 ### Project
 - README, AGPL-3.0-only license, GitHub Pages site (`site/`, deploys on push),
