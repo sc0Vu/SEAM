@@ -210,6 +210,20 @@ def test_draft_plan_starts_the_planner_into_the_plans_dir(cfg, fake_jobs):
     assert flags["--goal"] == "add x" and flags["--budget-usd"] == "0.5"
 
 
+def test_draft_plan_revises_a_saved_plan_by_name_only(cfg, fake_jobs):
+    call(cfg, "save_plan", name="p1", plan=json.loads((EXAMPLES / "case1.json").read_text()))
+    text, failed = call(cfg, "draft_plan", repo=str(cfg.repos[0]), goal="add docs",
+                        name="p2", base="p1", budget_usd=0.5)
+    assert not failed
+    flags = dict(zip(fake_jobs[0][2::2], fake_jobs[0][3::2], strict=False))
+    assert flags["--base"] == str(cfg.plans / "p1.json")
+    for base, why in [("ghost", "no saved plan"), ("../p1", "must be")]:
+        text, failed = call(cfg, "draft_plan", repo=str(cfg.repos[0]), goal="g",
+                            name="p3", base=base, budget_usd=0.5)
+        assert failed and why in text, (base, text)
+    assert len(fake_jobs) == 1  # the refused ones started nothing
+
+
 def test_job_reports_progress_and_exit(cfg):
     assert call(cfg, "job")[0] == "jobs: none"
     cfg.jobs.mkdir(parents=True)

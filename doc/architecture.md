@@ -820,7 +820,9 @@ both v1 cases passed; they have, §8.)
   the base's goal text plus `Revision: <goal>`, so the plan records the whole goal.
   The base goes in the prompt, capped at 64,000 characters (a prompt is one shell
   argument, 128 KiB on Linux). A plan revised after its goal was loaded is loaded with
-  `seam amend` under a new goal id, as any change of direction.
+  `seam amend` under a new goal id, as any change of direction. Over MCP,
+  `draft_plan` takes `base` as a saved plan's name, never a path, so a client stays
+  inside the plans dir.
 - *Planning rules given to the model:* module/directory-level scopes with the tests
   inside them; `blocked_by` for every task that uses another task's new API; a frozen
   contract in `spec_ref` for any shared-interface change; an indivisible feature is one

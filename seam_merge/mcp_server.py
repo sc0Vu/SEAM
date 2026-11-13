@@ -258,6 +258,12 @@ def draft_plan(cfg: Config, args: dict) -> str:
     argv = ["plan", "--state-dir", str(cfg.state_dir), "--repo", str(repo),
             "--goal", goal, "--out", str(out), "--budget-usd", str(budget),
             "--target", _target(args)]
+    if "base" in args:
+        # A saved plan by name, never a path: the client stays inside the plans dir.
+        base = _plan_path(cfg, _name(args, "base"))
+        if not base.exists():
+            raise ToolError(f"no saved plan {base.stem!r} to revise")
+        argv += ["--base", str(base)]
     job = _start_job(cfg, "plan", argv)
     return (f"started job {job}: planning (cap ${budget:.2f}). Poll `job` for progress; "
             f"when done, read it with show_plan name={name!r}, then `run` it.")
@@ -337,9 +343,13 @@ TOOLS = [
     Tool("cancel", "Cancel a task and every task that depends on it.",
          {"properties": {**TASK, **NOTES}, "required": ["task"]}, cancel, destructive=True),
     Tool("draft_plan", "Start the LLM planner on a goal (background job; spends up to "
-         "budget_usd). The plan is saved under `name` for review before any run.",
+         "budget_usd). The plan is saved under `name` for review before any run. With "
+         "`base`, it revises that saved plan instead of starting over: `goal` says what "
+         "to add or change, and every task removed, changed or added is reported.",
          {"properties": {**REPO, "goal": {"type": "string"},
                          "name": {"type": "string", "description": "plan name"},
+                         "base": {"type": "string",
+                                  "description": "a saved plan to revise (optional)"},
                          **BUDGET, **TARGET},
           "required": ["repo", "goal", "name", "budget_usd"]}, draft_plan),
     Tool("amend", "Change direction: replace goal `from_goal` with a saved plan. "
