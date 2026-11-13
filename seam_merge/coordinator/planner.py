@@ -40,8 +40,14 @@ class PlannerFailed(SeamError):
 @runtime_checkable
 class Planner(Protocol):
     """A planner runtime. `repo_snapshot` is a plain export of the target (no `.git`);
-    implementations must only read it, never edit it."""
+    implementations must only read it, never edit it.
+
+    `base` is an existing plan to revise rather than start over: the human may have
+    edited it, so a planner keeps its tasks as they are unless the goal requires a
+    change, and adds what the goal now asks for. The draft is still a whole plan;
+    what changed is reported to the human by `plan_checks.plan_changes`."""
 
     id: str
 
-    def plan(self, goal: str, repo_snapshot: Path) -> PlanDraft: ...
+    def plan(self, goal: str, repo_snapshot: Path,
+             base: Plan | None = None) -> PlanDraft: ...

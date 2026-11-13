@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -78,6 +79,27 @@ def test_plan_refuses_an_existing_out_file_before_anything_else(tmp_path, capsys
     assert cli.main(["plan", "--repo", str(repo), "--goal", "g", "--out", str(out),
                      "--state-dir", str(tmp_path / "s")]) == 1
     assert "exists" in capsys.readouterr().err
+
+
+def test_plan_base_must_be_a_valid_plan_before_anything_starts(tmp_path, capsys):
+    repo = make_repo(tmp_path, {"a.py": ""})
+    bad = tmp_path / "base.json"
+    bad.write_text('{"goal": "g", "tasks": []}')
+    assert cli.main(["plan", "--repo", str(repo), "--goal", "g", "--base", str(bad),
+                     "--out", str(tmp_path / "new.json"),
+                     "--state-dir", str(tmp_path / "s")]) == 1
+    assert "non-empty 'tasks'" in capsys.readouterr().err
+
+
+def test_a_revision_records_the_whole_goal_not_just_the_last_change(tmp_path):
+    drafted = tmp_path / "drafted.json"
+    drafted.write_text(json.dumps({**json.loads((EXAMPLES / "case1.json").read_text()),
+                                   "goal_text": "Build a snow game."}))
+    plan, text = cli.base_plan(drafted, "Add a README.")
+    assert plan.tasks == load_plan(EXAMPLES / "case1.json").tasks
+    assert text == "Build a snow game.\n\nRevision: Add a README."
+    # A hand-written plan has no goal text: the revision is the whole goal given.
+    assert cli.base_plan(EXAMPLES / "case1.json", "Add a README.")[1] == "Add a README."
 
 
 def _escalated_store(state):

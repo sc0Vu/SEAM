@@ -805,6 +805,22 @@ both v1 cases passed; they have, §8.)
 - *Human checkpoint first.* `seam plan --repo R --goal "…" --out plan.json` writes the
   plan for a human to read or edit before `run --plan`. Plan-and-run in one step comes
   only after LLM plans are measured.
+- *Revising a plan* (`seam plan --base plan.json --goal "…"`). Constraint served: the
+  human checkpoint above. A plan the human has edited is their work; re-planning from
+  scratch to add one thing would discard it, and hand-adding tasks skips the planner's
+  reading of the code. So `--base` gives the planner the existing plan (any valid
+  plan: drafted, edited or hand-written; checked with `load_plan` before anything
+  starts) and the goal as what to add or change. The planner is told to keep the base
+  tasks as they are unless the goal requires a change, keep the goal slug, and return
+  the whole revised plan. It is not trusted to have done so: `plan_changes`
+  (`seam_merge/coordinator/plan_checks.py`) compares the result with the base by task
+  key and field, and every task removed, changed (naming the fields) or added is
+  printed and recorded in the plan (`plan_changes`). Order and a missing field filled
+  with an empty value don't count. It reports, it does not block. `goal_text` becomes
+  the base's goal text plus `Revision: <goal>`, so the plan records the whole goal.
+  The base goes in the prompt, capped at 64,000 characters (a prompt is one shell
+  argument, 128 KiB on Linux). A plan revised after its goal was loaded is loaded with
+  `seam amend` under a new goal id, as any change of direction.
 - *Planning rules given to the model:* module/directory-level scopes with the tests
   inside them; `blocked_by` for every task that uses another task's new API; a frozen
   contract in `spec_ref` for any shared-interface change; an indivisible feature is one
@@ -851,7 +867,8 @@ both v1 cases passed; they have, §8.)
 
 **Built:** `seam_merge/coordinator/planner.py` (`Planner`, `PlanDraft`, `PlannerFailed`),
 `seam_merge/coordinator/lead.py:plan_from_dict` (the shared validation), `seam_merge/planners/claude_code.py`
-(`ClaudeCodePlanner`: tools Read/Glob/Grep, `PLAN_SCHEMA` structured output), and
+(`ClaudeCodePlanner`: tools Read/Glob/Grep, `PLAN_SCHEMA` structured output, and an
+optional `base` plan to revise), and
 `seam plan`, which exports the target to the state dir, starts the credential proxy,
 runs the planner, and writes the plan JSON with the goal text and the planner's notes
 (`goal_text`, `planner_notes`, ignored by `load_plan`). The `plan` command has its own

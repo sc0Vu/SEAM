@@ -122,6 +122,7 @@ and free the branch: `git commit --allow-empty -m "initial commit" && git checko
 | command | what it does |
 |---|---|
 | `seam plan --repo R --goal "…" --out plan.json` | the LLM planner drafts a plan from a goal in prose (read-only, in the sandbox) and writes it for you to review or edit |
+| `seam plan --repo R --base plan.json --goal "…" --out plan2.json` | revise an existing plan (e.g. one you edited) instead of starting over: keeps its tasks unless the goal needs them changed, adds what it asks for, and lists every task removed, changed or added |
 | `seam run --repo R --plan plan.json` | load the plan and run the team until nothing more can progress |
 | `seam run --repo R` | resume the tasks already in the state dir |
 | `seam add-goal --plan plan.json` | load a plan without running it |

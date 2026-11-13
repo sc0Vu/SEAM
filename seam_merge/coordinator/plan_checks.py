@@ -1,4 +1,5 @@
-"""Mechanical checks on a plan's test commands against the full suite (doc §12).
+"""Mechanical checks on a plan at the human checkpoint (doc §12): its test commands
+against the full suite, and what a revision changed in a base plan.
 
 A task passes review on its own `test_cmd` (gate 1) and merges only if the FULL
 suite passes on the merged tree (gate 2, invariant 5). If the suite collects a kind
@@ -54,3 +55,34 @@ def check_test_cmds(tasks: list[dict], suite_cmd: str) -> list[SuiteGap]:
                 f"test_cmd lacks {', '.join(missing)}, which the full suite uses: the task "
                 f"can pass its own tests and review, then fail at merge")))
     return gaps
+
+
+@dataclass(frozen=True)
+class TaskChange:
+    """One task a revised plan added, removed, or changed relative to its base.
+    `fields` names the changed fields (empty unless `change == "changed"`)."""
+
+    task: str
+    change: str
+    fields: tuple[str, ...] = ()
+
+
+def plan_changes(base: list[dict], revised: list[dict]) -> list[TaskChange]:
+    """What a revision (`seam plan --base`) did to the base plan's tasks, by key.
+
+    The base may carry the human's own edits, and the planner is told to keep them;
+    this makes every departure visible instead of trusting that it did. Tasks are
+    compared field by field, so order (which validation rewrites) never counts as a
+    change, nor does a missing field the planner filled with an empty value. Removed
+    tasks come first, then changed, then added, each in plan order."""
+    old = {t["key"]: t for t in base}
+    new = {t["key"]: t for t in revised}
+    out = [TaskChange(k, "removed") for k in old if k not in new]
+    for k, t in new.items():
+        if k in old:
+            fields = tuple(sorted(f for f in set(t) | set(old[k])
+                                  if (t.get(f) or None) != (old[k].get(f) or None)))
+            if fields:
+                out.append(TaskChange(k, "changed", fields))
+    out += [TaskChange(k, "added") for k in new if k not in old]
+    return out

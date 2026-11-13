@@ -75,6 +75,8 @@ Last updated: 2026-11-13. State: released **seam-merge 0.2.3** on PyPI (tag v0.2
 - Checks at the plan checkpoint (`seam plan`): claim probes run on the untouched code
   (failures reported), statements about current behavior with no probe flagged
   UNCHECKED, and each `test_cmd` compared with `--suite-cmd` (missing doctest flags).
+- `seam plan --base`: revise an existing plan; departures from the base reported
+  (`plan_changes`). Unmeasured on a real goal.
 
 ### Project
 - README, AGPL-3.0-only license, GitHub Pages site (`site/`, deploys on push),

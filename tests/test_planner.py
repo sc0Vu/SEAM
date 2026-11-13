@@ -5,7 +5,12 @@ import pytest
 
 from seam_merge.coordinator.lead import PlanError, load_plan, plan_from_dict
 from seam_merge.coordinator.planner import Planner, PlannerFailed
-from seam_merge.planners.claude_code import PLAN_SCHEMA, ClaudeCodePlanner, plan_to_json
+from seam_merge.planners.claude_code import (
+    MAX_BASE_CHARS,
+    PLAN_SCHEMA,
+    ClaudeCodePlanner,
+    plan_to_json,
+)
 from seam_merge.sandbox.base import RunResult
 
 DRAFT = {
@@ -114,3 +119,30 @@ def test_planner_backs_current_behavior_claims_with_probes(tmp_path):
                                        "detail": ""}]
     probes = {t["key"]: t.get("claim_probes") for t in written["tasks"]}
     assert probes["setlist"][0]["name"] == "old"
+
+
+def test_without_a_base_the_prompt_has_no_base_plan():
+    assert "BASE PLAN" not in ClaudeCodePlanner(FakeSandbox("")).command("goal")
+
+
+def test_a_base_plan_is_given_to_the_planner_to_revise(tmp_path):
+    base = plan_from_dict(DRAFT)
+    revised = json.loads(json.dumps(DRAFT))
+    revised["tasks"].append({"key": "docs", "type": "docs", "description": "README",
+                             "spec_ref": "", "file_scope": ["README.md"],
+                             "blocked_by": ["use_it"], "test_cmd": "t"})
+    sb = FakeSandbox(result(structured_output=revised))
+    draft = ClaudeCodePlanner(sb).plan("add a README", tmp_path, base=base)
+    prompt = shlex.split(sb.calls[0][0])[2]
+    assert "BASE PLAN" in prompt and "keep each of its tasks exactly" in prompt
+    assert '"add setlist"' in prompt and "add a README" in prompt  # base tasks + goal
+    assert [t["key"] for t in draft.plan.tasks][-1] == "docs"
+
+
+def test_an_oversized_base_plan_fails_before_any_model_call(tmp_path):
+    big = {"goal": "g", "tasks": [{"key": "a", "type": "backend",
+                                   "description": "x" * MAX_BASE_CHARS, "file_scope": ["a"]}]}
+    sb = FakeSandbox(result(structured_output=DRAFT))
+    with pytest.raises(PlannerFailed, match="base plan is"):
+        ClaudeCodePlanner(sb).plan("g", tmp_path, base=plan_from_dict(big))
+    assert sb.calls == []

@@ -7,6 +7,7 @@ The only place that prints or exits; everything below raises typed exceptions.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import subprocess
@@ -18,8 +19,8 @@ from pathlib import Path
 from seam_merge import __version__
 from seam_merge.coordinator import escalation
 from seam_merge.coordinator.claims import check_claims, unprobed_claims
-from seam_merge.coordinator.lead import Budget, Lead, goal_budget, load_plan
-from seam_merge.coordinator.plan_checks import check_test_cmds
+from seam_merge.coordinator.lead import Budget, Lead, Plan, goal_budget, load_plan
+from seam_merge.coordinator.plan_checks import check_test_cmds, plan_changes
 from seam_merge.engine.errors import SeamError
 from seam_merge.engine.git import GitRepo, Identity
 from seam_merge.engine.merge import MergeEngine
@@ -167,6 +168,9 @@ def cmd_plan(args: argparse.Namespace) -> None:
     out = Path(args.out)
     if out.exists():
         raise PreflightError(f"{out} exists; pick another --out")
+    base, goal_text = None, args.goal
+    if args.base:
+        base, goal_text = base_plan(Path(args.base), args.goal)
     credential = select_credential()
     preflight_sandbox(args, DockerSandbox(args.image, user=host_user()))
     scratch = args.state_dir / "tmp"
@@ -182,7 +186,7 @@ def cmd_plan(args: argparse.Namespace) -> None:
             planner = ClaudeCodePlanner(box, model=args.model, max_budget_usd=args.budget_usd,
                                         suite_cmd=args.suite_cmd)
             print(f"planning on {args.repo}@{args.target} (cap ${args.budget_usd:.2f})")
-            draft = planner.plan(args.goal, Path(d))
+            draft = planner.plan(goal_text, Path(d), base=base)
         # The plan's claims about today's code, checked on that same untouched code
         # in the sandbox with no network (doc §12).
         claims = check_claims(draft.plan.tasks, Path(d), DockerSandbox(args.image,
@@ -190,8 +194,10 @@ def cmd_plan(args: argparse.Namespace) -> None:
     _report_proxy(proxy)
     unprobed = unprobed_claims(draft.plan.tasks)
     gaps = check_test_cmds(draft.plan.tasks, args.suite_cmd)
-    out.write_text(plan_to_json(draft, args.goal, claim_check=claims,
-                                unprobed_claims=unprobed, test_cmd_gaps=gaps))
+    changes = plan_changes(base.tasks, draft.plan.tasks) if base else []
+    checks = {"plan_changes": changes} if base else {}
+    out.write_text(plan_to_json(draft, goal_text, claim_check=claims,
+                                unprobed_claims=unprobed, test_cmd_gaps=gaps, **checks))
     by_key = {t["key"]: t for t in draft.plan.tasks}
     for t in draft.plan.tasks:
         deps = f"  after {t.get('blocked_by')}" if t.get("blocked_by") else ""
@@ -201,6 +207,8 @@ def cmd_plan(args: argparse.Namespace) -> None:
     if overlaps:
         print(f"  overlapping scopes (will run one at a time): {overlaps}")
     print(f"\nplanner notes: {draft.notes}")
+    if base:
+        _print_changes(changes, args.base)
     _print_claims(claims, unprobed)
     _print_gaps(gaps)
     usage = format_usage(draft.usage) if draft.usage else "n/a"
@@ -226,6 +234,32 @@ def _print_claims(claims, unprobed=()) -> None:
               f"\"{u.excerpt}\"")
     if unprobed:
         print("  Check those statements against the code yourself, or re-plan.")
+
+
+def base_plan(path: Path, revision: str) -> tuple[Plan, str]:
+    """The plan `seam plan --base` revises, validated like any plan, and the goal text
+    for the revision: the base's own goal text (when it was a drafted plan) followed by
+    the new instruction, so the written plan records the whole goal, not just the last
+    change to it."""
+    plan = load_plan(path)
+    earlier = json.loads(path.read_text()).get("goal_text") or ""
+    if not isinstance(earlier, str) or not earlier.strip():
+        return plan, revision
+    return plan, f"{earlier.strip()}\n\nRevision: {revision.strip()}"
+
+
+def _print_changes(changes, base) -> None:
+    """Every departure from the base plan, which may hold the human's own edits."""
+    if not changes:
+        print(f"\nchanges to {base}: none")
+        return
+    print(f"\nchanges to {base}:")
+    for c in changes:
+        what = f" ({', '.join(c.fields)})" if c.fields else ""
+        print(f"  {c.change.upper():<8} {c.task}{what}")
+    if any(c.change != "added" for c in changes):
+        print("  The base tasks were changed: if you edited them, check that your edits "
+              "survived.")
 
 
 def _print_gaps(gaps) -> None:
@@ -488,7 +522,10 @@ def parser() -> argparse.ArgumentParser:
     pl = sub.add_parser("plan", help="draft a plan for a goal with the LLM planner")
     common(pl)
     pl.add_argument("--repo", required=True, type=lambda s: Path(s).expanduser().resolve())
-    pl.add_argument("--goal", required=True, help="the goal, in prose")
+    pl.add_argument("--goal", required=True,
+                    help="the goal, in prose (with --base: what to add or change)")
+    pl.add_argument("--base", metavar="PLAN",
+                    help="revise this plan (e.g. one you edited) instead of starting over")
     pl.add_argument("--out", required=True, help="where to write the plan JSON")
     pl.add_argument("--target", default="main")
     pl.add_argument("--image", default=DEFAULT_IMAGE)

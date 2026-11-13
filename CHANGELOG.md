@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **`seam plan --base plan.json`** revises an existing plan instead of starting over:
+  `--goal` says what to add or change, the planner keeps the base tasks (your edits)
+  unless the goal needs them changed, and every task removed, changed (with the
+  fields) or added is printed and recorded in the plan (`plan_changes`). The plan's
+  `goal_text` keeps the whole goal: the base's, then `Revision: …`.
+
 ## 0.2.3 — 2026-11-13
 
 - **`seam proposals [--out goal.txt]`** drafts a goal from the bugs workers set aside
