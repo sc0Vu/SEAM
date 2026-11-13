@@ -80,6 +80,8 @@ Last updated: 2026-11-13. State: released **seam-merge 0.2.3** on PyPI (tag v0.2
   2-task plan with a hand edit, revised to add docs and a Pages workflow; both base
   tasks kept byte-identical, 2 tasks added, report matched ($0.03 + $0.05). n=1, on
   an empty repo: not yet tried where the goal forces a base task to change.
+- `seam plan --base` after a run: merged tasks left out (matched by `plan_key`),
+  escalated ones kept and flagged, a running goal refused. Unit-tested; no real run.
 
 ### Project
 - README, AGPL-3.0-only license, GitHub Pages site (`site/`, deploys on push),

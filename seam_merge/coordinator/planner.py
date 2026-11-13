@@ -45,9 +45,12 @@ class Planner(Protocol):
     `base` is an existing plan to revise rather than start over: the human may have
     edited it, so a planner keeps its tasks as they are unless the goal requires a
     change, and adds what the goal now asks for. The draft is still a whole plan;
-    what changed is reported to the human by `plan_checks.plan_changes`."""
+    what changed is reported to the human by `plan_checks.plan_changes`. `merged` are
+    base tasks already merged (`revision.trim_base` took them out of `base`): their
+    code is in the snapshot, and the draft must not plan them again or list them in
+    `blocked_by`."""
 
     id: str
 
-    def plan(self, goal: str, repo_snapshot: Path,
-             base: Plan | None = None) -> PlanDraft: ...
+    def plan(self, goal: str, repo_snapshot: Path, base: Plan | None = None,
+             merged: list[dict] = ()) -> PlanDraft: ...

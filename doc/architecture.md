@@ -822,7 +822,22 @@ both v1 cases passed; they have, §8.)
   the base's goal text plus `Revision: <goal>`, so the plan records the whole goal.
   The base goes in the prompt, capped at 64,000 characters (a prompt is one shell
   argument, 128 KiB on Linux). A plan revised after its goal was loaded is loaded with
-  `seam amend` under a new goal id, as any change of direction. Over MCP,
+  `seam amend` under a new goal id, as any change of direction.
+  *After a run, the base is trimmed first* (`seam_merge/coordinator/revision.py`).
+  Constraint served: no work done twice, and no lost dependency. `amend` loads every
+  task of the new plan, so a base task that already merged, kept by a planner told to
+  keep base tasks, would run again. So `seam plan --base` looks the base's goal up in
+  `--state-dir` (`--base-goal ID`, default the plan's own goal; a goal since amended
+  must be named, as its tasks are not the latest) and matches its tasks by `plan_key`
+  (§4). Merged tasks leave the base, with every `blocked_by` edge to them (their code
+  is on main), and the planner is told they are merged and must not be planned again.
+  Escalated (`needs_human`) tasks stay, flagged: the old task still holds its files,
+  so its copy waits until a human cancels it or `amend --cancel-in-flight` does.
+  Open and cancelled tasks stay. A goal with any task still in flight is refused:
+  its outcome is unknown, and a kept task that depends on it could only lose that
+  dependency. So are tasks stored without a `plan_key` (older state dirs): the human
+  removes merged tasks by hand. The plan records what was found (`base_progress`), and
+  a merged task the revision plans again is printed as a WARNING. Over MCP,
   `draft_plan` takes `base` as a saved plan's name, never a path, so a client stays
   inside the plans dir.
 - *Planning rules given to the model:* module/directory-level scopes with the tests

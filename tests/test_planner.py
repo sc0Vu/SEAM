@@ -146,3 +146,11 @@ def test_an_oversized_base_plan_fails_before_any_model_call(tmp_path):
     with pytest.raises(PlannerFailed, match="base plan is"):
         ClaudeCodePlanner(sb).plan("g", tmp_path, base=plan_from_dict(big))
     assert sb.calls == []
+
+
+def test_merged_base_tasks_are_named_so_the_planner_does_not_replan_them():
+    base = plan_from_dict({"goal": "g", "tasks": [DRAFT["tasks"][0] | {"blocked_by": []}]})
+    planner = ClaudeCodePlanner(FakeSandbox(""))
+    prompt = shlex.split(planner.command("g", base, [DRAFT["tasks"][1]]))[2]
+    assert "ALREADY MERGED" in prompt and '"setlist"' in prompt
+    assert "ALREADY MERGED" not in shlex.split(planner.command("g", base))[2]

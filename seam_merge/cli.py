@@ -19,8 +19,9 @@ from pathlib import Path
 from seam_merge import __version__
 from seam_merge.coordinator import escalation
 from seam_merge.coordinator.claims import check_claims, unprobed_claims
-from seam_merge.coordinator.lead import Budget, Lead, Plan, goal_budget, load_plan
+from seam_merge.coordinator.lead import Budget, Lead, Plan, PlanError, goal_budget, load_plan
 from seam_merge.coordinator.plan_checks import check_test_cmds, plan_changes
+from seam_merge.coordinator.revision import TrimmedBase, trim_base
 from seam_merge.engine.errors import SeamError
 from seam_merge.engine.git import GitRepo, Identity
 from seam_merge.engine.merge import MergeEngine
@@ -168,9 +169,12 @@ def cmd_plan(args: argparse.Namespace) -> None:
     out = Path(args.out)
     if out.exists():
         raise PreflightError(f"{out} exists; pick another --out")
-    base, goal_text = None, args.goal
+    base, goal_text, trimmed = None, args.goal, None
     if args.base:
-        base, goal_text = base_plan(Path(args.base), args.goal)
+        full, goal_text = base_plan(Path(args.base), args.goal)
+        trimmed = trim_against_store(args.state_dir, full, args.base_goal)
+        base = trimmed.base
+        merged = [t for t in full.tasks if t["key"] in {m.task for m in trimmed.merged}]
     credential = select_credential()
     preflight_sandbox(args, DockerSandbox(args.image, user=host_user()))
     scratch = args.state_dir / "tmp"
@@ -186,7 +190,8 @@ def cmd_plan(args: argparse.Namespace) -> None:
             planner = ClaudeCodePlanner(box, model=args.model, max_budget_usd=args.budget_usd,
                                         suite_cmd=args.suite_cmd)
             print(f"planning on {args.repo}@{args.target} (cap ${args.budget_usd:.2f})")
-            draft = planner.plan(goal_text, Path(d), base=base)
+            draft = (planner.plan(goal_text, Path(d), base=base, merged=merged) if base
+                     else planner.plan(goal_text, Path(d)))
         # The plan's claims about today's code, checked on that same untouched code
         # in the sandbox with no network (doc §12).
         claims = check_claims(draft.plan.tasks, Path(d), DockerSandbox(args.image,
@@ -195,7 +200,8 @@ def cmd_plan(args: argparse.Namespace) -> None:
     unprobed = unprobed_claims(draft.plan.tasks)
     gaps = check_test_cmds(draft.plan.tasks, args.suite_cmd)
     changes = plan_changes(base.tasks, draft.plan.tasks) if base else []
-    checks = {"plan_changes": changes} if base else {}
+    checks = {"plan_changes": changes,
+              "base_progress": trimmed.merged + trimmed.escalated} if base else {}
     out.write_text(plan_to_json(draft, goal_text, claim_check=claims,
                                 unprobed_claims=unprobed, test_cmd_gaps=gaps, **checks))
     by_key = {t["key"]: t for t in draft.plan.tasks}
@@ -208,7 +214,7 @@ def cmd_plan(args: argparse.Namespace) -> None:
         print(f"  overlapping scopes (will run one at a time): {overlaps}")
     print(f"\nplanner notes: {draft.notes}")
     if base:
-        _print_changes(changes, args.base)
+        _print_changes(changes, args.base, trimmed)
     _print_claims(claims, unprobed)
     _print_gaps(gaps)
     usage = format_usage(draft.usage) if draft.usage else "n/a"
@@ -248,8 +254,39 @@ def base_plan(path: Path, revision: str) -> tuple[Plan, str]:
     return plan, f"{earlier.strip()}\n\nRevision: {revision.strip()}"
 
 
-def _print_changes(changes, base) -> None:
-    """Every departure from the base plan, which may hold the human's own edits."""
+def trim_against_store(state_dir: Path, base: Plan, base_goal: str | None) -> TrimmedBase:
+    """The base without its merged tasks, looked up in the state dir under the goal it
+    was loaded as (`base_goal`, default the plan's own goal). A goal that was later
+    amended is refused unless named explicitly: its tasks are not the latest ones.
+    No state dir yet, or the goal never loaded: the base as it is."""
+    db = state_dir / "seam.sqlite"
+    if not db.exists():
+        return TrimmedBase(base)
+    store = TaskStore(db)
+    try:
+        goal = base_goal or base.goal
+        later = [g for g, old in store.amendments() if old == goal]
+        if later and not base_goal:
+            raise PlanError(f"goal {goal!r} was amended by {later[-1]!r}: pass --base-goal "
+                            f"{later[-1]} (or --base-goal {goal} if you mean the old one)")
+        return trim_base(base, [t for t in store.list() if t.spec.goal_id == goal])
+    finally:
+        store.close()
+
+
+def _print_changes(changes, base, trimmed: TrimmedBase) -> None:
+    """Every departure from the base plan, which may hold the human's own edits, and
+    what the state dir says the base's goal already did."""
+    if trimmed.merged:
+        done = ", ".join(f"{m.task} (task {m.task_id})" for m in trimmed.merged)
+        print(f"\nalready merged, left out of the base: {done}")
+    for e in trimmed.escalated:
+        print(f"  ESCALATED {e.task} (task {e.task_id}) is still in the base: it keeps "
+              f"its files until you `seam cancel --task {e.task_id}`, or load the plan "
+              "with `seam amend --cancel-in-flight`")
+    replanned = {m.task for m in trimmed.merged} & {c.task for c in changes}
+    for k in sorted(replanned):
+        print(f"  WARNING: {k} already merged, and the revision plans it again")
     if not changes:
         print(f"\nchanges to {base}: none")
         return
@@ -526,6 +563,9 @@ def parser() -> argparse.ArgumentParser:
                     help="the goal, in prose (with --base: what to add or change)")
     pl.add_argument("--base", metavar="PLAN",
                     help="revise this plan (e.g. one you edited) instead of starting over")
+    pl.add_argument("--base-goal", metavar="ID",
+                    help="the goal id --base was loaded as, to leave out its merged tasks "
+                         "(default: the plan's own goal)")
     pl.add_argument("--out", required=True, help="where to write the plan JSON")
     pl.add_argument("--target", default="main")
     pl.add_argument("--image", default=DEFAULT_IMAGE)

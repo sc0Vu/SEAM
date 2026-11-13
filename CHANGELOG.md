@@ -7,6 +7,11 @@
   unless the goal needs them changed, and every task removed, changed (with the
   fields) or added is printed and recorded in the plan (`plan_changes`). The plan's
   `goal_text` keeps the whole goal: the base's, then `Revision: …`.
+- **Revising after a run.** `seam plan --base` looks the base's goal up in the state
+  dir (`--base-goal` if it was loaded under another id): merged tasks are left out
+  and the planner is told not to plan them again; escalated ones are kept and
+  flagged; a goal still running is refused. Tasks now record their plan key
+  (`plan_key`; older state dirs gain the column, but their tasks have no key).
 - **MCP `draft_plan` takes `base`**: the name of a saved plan to revise (names only,
   so a client cannot point the planner at a path outside the plans dir).
 
