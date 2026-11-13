@@ -28,6 +28,8 @@ def test_plan_is_ordered_dependencies_first_and_ids_resolved(tmp_path):
     assert created["b"].spec.blocked_by == (created["a"].id,)
     assert created["c"].spec.blocked_by == (created["b"].id,)
     assert all(x.state is State.OPEN and x.spec.goal_id == "g1" for x in created.values())
+    assert {k: store.get(x.id).spec.plan_key for k, x in created.items()} == {
+        "a": "a", "b": "b", "c": "c"}
 
 
 @pytest.mark.parametrize(

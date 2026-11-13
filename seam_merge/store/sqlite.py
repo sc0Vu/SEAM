@@ -45,7 +45,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     merge_sha     TEXT,                          -- the merge commit, recorded pre-publish
     pending_scope TEXT    NOT NULL DEFAULT '[]', -- JSON globs of a denied scope request
     may_change_tests TEXT NOT NULL DEFAULT '[]', -- JSON test ids the lead lets it rewrite
-    proposals     TEXT    NOT NULL DEFAULT '[]'  -- JSON: separate work the worker set aside
+    proposals     TEXT    NOT NULL DEFAULT '[]', -- JSON: separate work the worker set aside
+    plan_key      TEXT                           -- the plan task's key, if from a plan
 );
 -- Invariant 4 enforced by the database itself: at most one row may be `merging`.
 CREATE UNIQUE INDEX IF NOT EXISTS one_merging ON tasks(state) WHERE state = 'merging';
@@ -144,12 +145,13 @@ class TaskStore:
         with self._tx() as db:
             cur = db.execute(
                 "INSERT INTO tasks (goal_id, type, description, spec_ref, file_scope,"
-                " blocked_by, priority, test_cmd, may_change_tests)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " blocked_by, priority, test_cmd, may_change_tests, plan_key)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     spec.goal_id, spec.type, spec.description, spec.spec_ref,
                     json.dumps(list(spec.file_scope)), json.dumps(list(spec.blocked_by)),
                     spec.priority, spec.test_cmd, json.dumps(list(spec.may_change_tests)),
+                    spec.plan_key,
                 ),
             )
         return self.get(cur.lastrowid)
@@ -313,6 +315,8 @@ class TaskStore:
         for col in ("pending_scope", "may_change_tests", "proposals"):
             if col not in task_cols:
                 self._db.execute(f"ALTER TABLE tasks ADD COLUMN {col} TEXT NOT NULL DEFAULT '[]'")
+        if "plan_key" not in task_cols:
+            self._db.execute("ALTER TABLE tasks ADD COLUMN plan_key TEXT")
 
     def record_run(self, run: RunRecord) -> None:
         """Append one agent run's cost and tokens (accounting only; no state change)."""
@@ -406,6 +410,7 @@ def _to_task(row: sqlite3.Row) -> Task:
             priority=row["priority"],
             test_cmd=row["test_cmd"],
             may_change_tests=tuple(json.loads(row["may_change_tests"])),
+            plan_key=row["plan_key"],
         ),
         state=State(row["state"]),
         attempts=row["attempts"],

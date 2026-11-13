@@ -279,7 +279,9 @@ may_change_tests[]  (pre-existing tests, `path::[Class::]name`, the lead lets th
                      task rewrite because it deliberately changes what they assert;
                      every other pre-existing test is guarded, §2 review gate),
 proposals[]  (separate work the worker set aside in its latest submission; text for
-              the reviewer and the lead, never a task by itself, §2)
+              the reviewer and the lead, never a task by itself, §2),
+plan_key  (the `key` of the plan task it was made from, so a revision of that plan
+           can tell which tasks already merged, §12; NULL for older state dirs)
 ```
 
 **Task branches.** `seam/<namespace>/task-<id>`, where the namespace is a short

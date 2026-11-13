@@ -129,6 +129,7 @@ class Lead:
 
     def submit_plan(self, plan: Plan) -> dict[str, Task]:
         """Create every planned task (dependencies first); return them by plan key.
+        Each task records its key, so a revision of the plan can find it (§12).
 
         A goal is loaded once: if the store already has tasks for it, this raises
         `GoalAlreadyLoaded` instead of creating duplicates, which would hold the same
@@ -153,6 +154,7 @@ class Lead:
                 priority=t.get("priority", 0),
                 test_cmd=t.get("test_cmd", ""),
                 may_change_tests=tuple(t.get("may_change_tests", [])),
+                plan_key=t["key"],
             ))
         return created
 

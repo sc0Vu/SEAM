@@ -274,6 +274,7 @@ def test_old_task_table_gains_the_newer_columns(tmp_path):
     assert s.get(1).pending_scope == ()
     assert s.get(1).spec.may_change_tests == ()
     assert s.get(1).proposals == ()
+    assert s.get(1).spec.plan_key is None  # unknown for tasks made before keys
     s.close()
 
 

@@ -24,6 +24,10 @@ class TaskSpec:
     # deliberately changes the behavior they assert. Any other pre-existing test must
     # keep its original statements; the review gate rejects the change otherwise.
     may_change_tests: tuple[str, ...] = ()
+    # The `key` of the plan task this came from, so a later revision of that plan
+    # (`seam plan --base`) can tell which of its tasks already merged. None for tasks
+    # made before keys were recorded, or not from a plan.
+    plan_key: str | None = None
 
 
 @dataclass(frozen=True)
